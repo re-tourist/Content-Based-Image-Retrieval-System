@@ -1,0 +1,22 @@
+# Base configuration for the early project stage.
+# Keep this file small and only cover values that current scripts need.
+
+dataset:
+  # Project-relative paths are supported and will be resolved automatically.
+  root: data
+  raw_dir: raw
+  processed_dir: processed
+  splits_dir: splits
+
+preprocess:
+  image_size: [224, 224]
+  to_grayscale: false
+
+feature:
+  local_method: sift
+
+output:
+  feature_dir: outputs/features
+  index_dir: outputs/indices
+  figure_dir: outputs/figures
+  log_dir: outputs/logs
