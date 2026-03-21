@@ -10,7 +10,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.datasets import ImageDatasetLoader
+from src.datasets import ImageDatasetLoader, ImageSample
+from src.features.local import LocalFeatureResult, extract_local_features
+from src.preprocess import PreprocessResult, preprocess_image
 from src.utils import get_default_config_path, load_config
 
 
@@ -101,23 +103,72 @@ def print_dataset_summary(loader: ImageDatasetLoader, image_dir: Path, resolved_
     print(f"Supported extensions: {', '.join(stats['supported_extensions'])}")
 
 
-def run_dataset_preview(loader: ImageDatasetLoader, preview_count: int = DEFAULT_PREVIEW_COUNT) -> None:
-    samples = loader.preview(min(preview_count, len(loader)))
-    print(f"Previewing first {len(samples)} samples")
-    for sample in samples:
-        print(
-            f"Sample: id={sample.sample_id} "
-            f"file={sample.file_name} split={sample.split}"
-        )
+def run_pipeline_skeleton(loader: ImageDatasetLoader, config: dict[str, Any]) -> None:
+    preprocess_config = _get_mapping(config, "preprocess")
+    feature_config = _get_mapping(config, "feature")
+    output_config = _get_mapping(config, "output")
+    samples = loader.preview(min(DEFAULT_PREVIEW_COUNT, len(loader)))
 
+    print(f"Running pipeline skeleton on first {len(samples)} samples")
     for sample in samples:
+        print(f"Sample: id={sample.sample_id} file={sample.file_name} split={sample.split}")
+
         image = loader.load_image(sample)
-        print(f"Read image: {sample.file_name} shape={tuple(int(dim) for dim in image.shape)}")
+        print(f"Dataset stage loaded image for {sample.file_name} shape={_shape_of(image)}")
 
-        # Future hook: preprocess
-        # Future hook: local feature extraction
-        # Future hook: feature saving
-        # Future hook: visualization
+        preprocess_result = preprocess_image(image, preprocess_config)
+        print_preprocess_stage(sample, preprocess_result)
+
+        feature_result = extract_local_features(preprocess_result.image, feature_config)
+        print_local_feature_stage(sample, feature_result)
+
+        save_feature_result(sample, feature_result, output_config)
+        visualize_keypoints(sample, preprocess_result.image, feature_result, output_config)
+
+        # Future hooks: feature encoding -> tf-idf -> inverted index -> retrieval
+        # -> rerank -> query expansion -> dense global retrieval -> hybrid fusion
+
+
+def print_preprocess_stage(sample: ImageSample, result: PreprocessResult) -> None:
+    print(
+        "Preprocess stage completed for "
+        f"{sample.file_name} output_shape={result.meta.get('output_shape')} "
+        f"steps={result.meta.get('applied_steps')}"
+    )
+
+
+def print_local_feature_stage(sample: ImageSample, result: LocalFeatureResult) -> None:
+    print(
+        "Local feature stage placeholder executed for "
+        f"{sample.file_name} method={result.meta.get('method')} "
+        f"keypoints={len(result.keypoints)}"
+    )
+
+
+def save_feature_result(
+    sample: ImageSample,
+    feature_result: LocalFeatureResult,
+    output_config: dict[str, Any],
+) -> None:
+    feature_dir = output_config.get("feature_dir", "outputs/features")
+    print(
+        "Save stage placeholder executed for "
+        f"{sample.file_name} target={feature_dir} descriptors={feature_result.descriptors is not None}"
+    )
+
+
+def visualize_keypoints(
+    sample: ImageSample,
+    image: Any,
+    feature_result: LocalFeatureResult,
+    output_config: dict[str, Any],
+) -> None:
+    figure_dir = output_config.get("figure_dir", "outputs/figures")
+    print(
+        "Visualization stage placeholder executed for "
+        f"{sample.file_name} target={figure_dir} input_shape={_shape_of(image)} "
+        f"keypoints={len(feature_result.keypoints)}"
+    )
 
 
 def _require_path(value: Any, field_name: str, base_dir: Path | None = None) -> Path:
@@ -132,6 +183,22 @@ def _require_path(value: Any, field_name: str, base_dir: Path | None = None) -> 
     return path
 
 
+def _get_mapping(config: dict[str, Any], key: str) -> dict[str, Any]:
+    value = config.get(key)
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError(f"Config section '{key}' must be a mapping.")
+    return value
+
+
+def _shape_of(image: Any) -> tuple[int, ...] | None:
+    shape = getattr(image, "shape", None)
+    if not isinstance(shape, tuple):
+        return None
+    return tuple(int(dim) for dim in shape)
+
+
 def main() -> int:
     args = parse_args()
 
@@ -141,7 +208,7 @@ def main() -> int:
 
         loader, image_dir, resolved_from = build_dataset_loader(config)
         print_dataset_summary(loader, image_dir, resolved_from)
-        run_dataset_preview(loader)
+        run_pipeline_skeleton(loader, config)
         print("Pipeline skeleton run completed")
         return 0
     except (FileNotFoundError, NotADirectoryError, ValueError, OSError, ImportError) as exc:
