@@ -14,6 +14,7 @@ from src.datasets import ImageDatasetLoader, ImageSample
 from src.features.local import LocalFeatureResult, extract_local_features, save_local_feature_result
 from src.preprocess import PreprocessResult, preprocess_image
 from src.utils import get_default_config_path, load_config
+from src.visualization import save_keypoint_visualization
 
 
 DEFAULT_PREVIEW_COUNT = 3
@@ -113,12 +114,15 @@ def print_dataset_summary(loader: ImageDatasetLoader, image_dir: Path, resolved_
 def run_pipeline_skeleton(loader: ImageDatasetLoader, config: dict[str, Any]) -> None:
     preprocess_config = _get_mapping(config, "preprocess")
     local_feature_config = _get_local_feature_config(config)
+    visualization_config = _get_visualization_config(config)
     output_config = _get_mapping(config, "output")
     sample_limit = min(_resolve_max_samples(local_feature_config), len(loader))
     samples = loader.preview(sample_limit)
 
     print(f"Running pipeline skeleton on first {len(samples)} samples")
     print(f"Local feature method: {str(local_feature_config.get('method', local_feature_config.get('local_method', 'sift'))).lower()}")
+    if bool(visualization_config.get("enabled", True)) and bool(visualization_config.get("save_keypoints", True)):
+        print("Keypoint visualization enabled")
 
     for sample in samples:
         print(f"Sample: id={sample.sample_id} file={sample.file_name} split={sample.split}")
@@ -133,10 +137,21 @@ def run_pipeline_skeleton(loader: ImageDatasetLoader, config: dict[str, Any]) ->
         print_local_feature_stage(sample, feature_result)
 
         save_path = save_feature_result(sample, feature_result, local_feature_config, output_config)
-        visualize_keypoints(sample, preprocess_result.image, feature_result, output_config)
+        figure_path = visualize_keypoints(
+            sample,
+            preprocess_result.image,
+            feature_result,
+            output_config,
+            visualization_config,
+        )
 
         if save_path is not None:
             print(f"Saved features to {save_path}")
+        if figure_path is not None:
+            print(
+                f"Visualized {feature_result.meta.get('num_keypoints')} keypoints for sample {sample.sample_id}"
+            )
+            print(f"Saved keypoint figure to {figure_path}")
 
         # Future hooks: feature encoding -> tf-idf -> inverted index -> retrieval
         # -> rerank -> query expansion -> dense global retrieval -> hybrid fusion
@@ -189,12 +204,21 @@ def visualize_keypoints(
     image: Any,
     feature_result: LocalFeatureResult,
     output_config: dict[str, Any],
-) -> None:
+    visualization_config: dict[str, Any],
+) -> Path | None:
+    enabled = bool(visualization_config.get("enabled", True))
+    save_keypoints = bool(visualization_config.get("save_keypoints", True))
+    if not enabled or not save_keypoints:
+        return None
+
     figure_dir = output_config.get("figure_dir", "outputs/figures")
-    print(
-        "Visualization stage placeholder executed for "
-        f"{sample.file_name} target={figure_dir} input_shape={_shape_of(image)} "
-        f"keypoints={feature_result.meta.get('num_keypoints')}"
+    label = f"{feature_result.meta.get('method')} keypoints={feature_result.meta.get('num_keypoints')}"
+    return save_keypoint_visualization(
+        sample.sample_id,
+        image,
+        feature_result.keypoints,
+        figure_dir,
+        label=label,
     )
 
 
@@ -212,6 +236,16 @@ def _get_local_feature_config(config: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(legacy_value, dict):
         raise ValueError("Config section 'feature' must be a mapping.")
     return legacy_value
+
+
+
+def _get_visualization_config(config: dict[str, Any]) -> dict[str, Any]:
+    value = config.get("visualization")
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError("Config section 'visualization' must be a mapping.")
+    return value
 
 
 
