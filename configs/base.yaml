@@ -42,6 +42,11 @@ encoding:
     max_descriptors: 50000
     batch_size: 1024
     random_state: 42
+  bow:
+    enabled: false
+    codebook_dir: outputs/indices/codebooks
+    output_dir: outputs/encoded
+    normalize: false
 
 output:
   feature_dir: outputs/features
