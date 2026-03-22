@@ -54,18 +54,21 @@ def run_feature_encoding(config: dict[str, Any], methods: list[str] | None = Non
         raise ValueError("Config field 'encoding.bow.enabled' must be true to encode features.")
 
     feature_dir = _resolve_path(
-        input_config.get("feature_dir", output_config.get("feature_dir", "outputs/features")),
+        _first_value(input_config.get("feature_dir"), output_config.get("feature_dir"), "outputs/features"),
         "encoding.input.feature_dir",
     )
     codebook_dir = _resolve_path(
-        bow_config.get("codebook_dir", codebook_config.get("output_dir", "outputs/indices/codebooks")),
-        "encoding.bow.codebook_dir",
+        _first_value(codebook_config.get("output_dir"), bow_config.get("codebook_dir"), "outputs/indices/codebooks"),
+        "encoding.codebook.output_dir",
     )
     encoded_dir = _resolve_path(
-        bow_config.get("output_dir", "outputs/encoded"),
-        "encoding.bow.output_dir",
+        _first_value(input_config.get("encoded_dir"), bow_config.get("output_dir"), "outputs/encoded"),
+        "encoding.input.encoded_dir",
     )
-    normalize = _require_bool(bow_config.get("normalize", False), "encoding.bow.normalize")
+    normalize = _resolve_bow_normalized(bow_config)
+
+    print(f"Encoding saved feature artifacts from {feature_dir} into {encoded_dir}")
+    print(f"Using method-specific codebooks from {codebook_dir}")
 
     saved_paths = encode_feature_directory(
         feature_dir=feature_dir,
@@ -111,6 +114,23 @@ def _resolve_path(value: Any, field_name: str) -> Path:
     else:
         path = path.resolve()
     return path
+
+
+
+def _resolve_bow_normalized(bow_config: dict[str, Any]) -> bool:
+    if "normalized" in bow_config:
+        return _require_bool(bow_config.get("normalized"), "encoding.bow.normalized")
+    if "normalize" in bow_config:
+        return _require_bool(bow_config.get("normalize"), "encoding.bow.normalize")
+    return False
+
+
+
+def _first_value(*values: Any) -> Any:
+    for value in values:
+        if value is not None:
+            return value
+    return None
 
 
 

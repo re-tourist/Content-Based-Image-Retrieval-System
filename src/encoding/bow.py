@@ -95,6 +95,26 @@ def encode_bow_from_feature_path(
 
 
 
+def encode_feature_file(
+    feature_path: str | Path,
+    codebook_dir: str | Path,
+    output_dir: str | Path,
+    *,
+    normalize: bool = False,
+) -> Path:
+    """Encode one saved feature artifact with its matching method-specific codebook."""
+    record = load_feature_npz(feature_path)
+    codebook, codebook_path = _load_required_codebook_for_method(codebook_dir, record.method)
+    encoded_result = encode_bow_from_feature_record(
+        record,
+        codebook,
+        normalize=normalize,
+        codebook_path=codebook_path,
+    )
+    return save_encoded_feature(encoded_result, output_dir)
+
+
+
 def assign_visual_words(descriptors: np.ndarray, codebook: CodebookArtifact) -> np.ndarray:
     """Assign each descriptor to its nearest visual word index."""
     if not isinstance(descriptors, np.ndarray):
@@ -141,13 +161,7 @@ def encode_feature_directory(
             continue
 
         matched_feature_count += 1
-        codebook_entry = codebooks.get(method)
-        if codebook_entry is None:
-            raise FileNotFoundError(
-                f"No codebook artifact available for method {method} under {Path(codebook_dir).expanduser()}."
-            )
-
-        codebook, codebook_path = codebook_entry
+        codebook, codebook_path = _require_codebook_entry(codebooks, method, codebook_dir)
         encoded_result = encode_bow_from_feature_record(
             record,
             codebook,
@@ -200,6 +214,30 @@ def _normalize_method_filter(methods: Iterable[str] | None) -> tuple[str, ...] |
 
 
 
+def _load_required_codebook_for_method(
+    codebook_dir: str | Path,
+    method: str,
+) -> tuple[CodebookArtifact, Path]:
+    normalized_method = _normalize_method(method)
+    codebooks = _load_codebooks_by_method(codebook_dir, methods=(normalized_method,))
+    return _require_codebook_entry(codebooks, normalized_method, codebook_dir)
+
+
+
+def _require_codebook_entry(
+    codebooks: dict[str, tuple[CodebookArtifact, Path]],
+    method: str,
+    codebook_dir: str | Path,
+) -> tuple[CodebookArtifact, Path]:
+    codebook_entry = codebooks.get(method)
+    if codebook_entry is None:
+        raise FileNotFoundError(
+            f"No codebook artifact available for method {method} under {Path(codebook_dir).expanduser()}."
+        )
+    return codebook_entry
+
+
+
 def _load_codebooks_by_method(
     codebook_dir: str | Path,
     methods: tuple[str, ...] | None = None,
@@ -223,5 +261,3 @@ def _load_codebooks_by_method(
         loaded[artifact.method] = (artifact, codebook_path.resolve())
 
     return loaded
-
-
