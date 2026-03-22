@@ -14,8 +14,11 @@ dataset:
   query_split: query.txt
 
 preprocess:
-  image_size: [224, 224]
-  to_grayscale: false
+  resize:
+    enabled: true
+    width: 256
+    height: 256
+  color_mode: gray
 
 feature:
   local_method: sift

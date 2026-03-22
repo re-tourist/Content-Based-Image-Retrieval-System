@@ -19,14 +19,16 @@ from src.utils import get_default_config_path, load_config
 DEFAULT_PREVIEW_COUNT = 3
 
 
+
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run the stage-1 pipeline skeleton.")
+    parser = argparse.ArgumentParser(description="Run the current pipeline skeleton.")
     parser.add_argument(
         "--config",
         default=get_default_config_path(),
         help="Path to the runtime config file. Defaults to configs/base.yaml.",
     )
     return parser.parse_args()
+
 
 
 def load_runtime_config(config_path: str) -> tuple[dict[str, Any], Path]:
@@ -40,6 +42,7 @@ def load_runtime_config(config_path: str) -> tuple[dict[str, Any], Path]:
     return config, resolved_path
 
 
+
 def build_dataset_loader(config: dict[str, Any]) -> tuple[ImageDatasetLoader, Path, str]:
     dataset_config = config.get("dataset")
     if not isinstance(dataset_config, dict):
@@ -50,6 +53,7 @@ def build_dataset_loader(config: dict[str, Any]) -> tuple[ImageDatasetLoader, Pa
     split = infer_split_name(dataset_root, image_dir)
     loader = ImageDatasetLoader(root_dir=image_dir, split=split, verbose=False)
     return loader, image_dir, resolved_from
+
 
 
 def resolve_dataset_image_dir(dataset_config: dict[str, Any], dataset_root: Path) -> tuple[Path, str]:
@@ -85,6 +89,7 @@ def resolve_dataset_image_dir(dataset_config: dict[str, Any], dataset_root: Path
     )
 
 
+
 def infer_split_name(dataset_root: Path, image_dir: Path) -> str:
     train_dir = (dataset_root / "train" / "image").resolve()
     test_dir = (dataset_root / "test").resolve()
@@ -95,12 +100,14 @@ def infer_split_name(dataset_root: Path, image_dir: Path) -> str:
     return "unspecified"
 
 
+
 def print_dataset_summary(loader: ImageDatasetLoader, image_dir: Path, resolved_from: str) -> None:
     stats = loader.stats()
     print(f"Resolved dataset image directory: {image_dir} ({resolved_from})")
     print(f"Loaded {stats['total_images']} images from {image_dir}")
     print(f"Dataset split: {stats['split']}")
     print(f"Supported extensions: {', '.join(stats['supported_extensions'])}")
+
 
 
 def run_pipeline_skeleton(loader: ImageDatasetLoader, config: dict[str, Any]) -> None:
@@ -114,7 +121,7 @@ def run_pipeline_skeleton(loader: ImageDatasetLoader, config: dict[str, Any]) ->
         print(f"Sample: id={sample.sample_id} file={sample.file_name} split={sample.split}")
 
         image = loader.load_image(sample)
-        print(f"Dataset stage loaded image for {sample.file_name} shape={_shape_of(image)}")
+        print(f"Loaded image with shape={_shape_of(image)}")
 
         preprocess_result = preprocess_image(image, preprocess_config)
         print_preprocess_stage(sample, preprocess_result)
@@ -129,12 +136,20 @@ def run_pipeline_skeleton(loader: ImageDatasetLoader, config: dict[str, Any]) ->
         # -> rerank -> query expansion -> dense global retrieval -> hybrid fusion
 
 
+
 def print_preprocess_stage(sample: ImageSample, result: PreprocessResult) -> None:
+    resize_meta = result.meta.get("resize", {})
+    resize_text = "disabled"
+    if isinstance(resize_meta, dict) and resize_meta.get("enabled"):
+        resize_text = f"enabled -> ({resize_meta.get('height')}, {resize_meta.get('width')})"
+
     print(
         "Preprocess stage completed for "
-        f"{sample.file_name} output_shape={result.meta.get('output_shape')} "
-        f"steps={result.meta.get('applied_steps')}"
+        f"{sample.file_name} original_shape={result.original_shape} "
+        f"processed_shape={result.processed_shape} color_mode={result.color_mode} "
+        f"resize={resize_text} steps={result.meta.get('applied_steps')}"
     )
+
 
 
 def print_local_feature_stage(sample: ImageSample, result: LocalFeatureResult) -> None:
@@ -143,6 +158,7 @@ def print_local_feature_stage(sample: ImageSample, result: LocalFeatureResult) -
         f"{sample.file_name} method={result.meta.get('method')} "
         f"keypoints={len(result.keypoints)}"
     )
+
 
 
 def save_feature_result(
@@ -155,6 +171,7 @@ def save_feature_result(
         "Save stage placeholder executed for "
         f"{sample.file_name} target={feature_dir} descriptors={feature_result.descriptors is not None}"
     )
+
 
 
 def visualize_keypoints(
@@ -171,6 +188,7 @@ def visualize_keypoints(
     )
 
 
+
 def _require_path(value: Any, field_name: str, base_dir: Path | None = None) -> Path:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"Config field '{field_name}' must be a non-empty path string.")
@@ -183,6 +201,7 @@ def _require_path(value: Any, field_name: str, base_dir: Path | None = None) -> 
     return path
 
 
+
 def _get_mapping(config: dict[str, Any], key: str) -> dict[str, Any]:
     value = config.get(key)
     if value is None:
@@ -192,11 +211,13 @@ def _get_mapping(config: dict[str, Any], key: str) -> dict[str, Any]:
     return value
 
 
+
 def _shape_of(image: Any) -> tuple[int, ...] | None:
     shape = getattr(image, "shape", None)
     if not isinstance(shape, tuple):
         return None
     return tuple(int(dim) for dim in shape)
+
 
 
 def main() -> int:
@@ -211,7 +232,7 @@ def main() -> int:
         run_pipeline_skeleton(loader, config)
         print("Pipeline skeleton run completed")
         return 0
-    except (FileNotFoundError, NotADirectoryError, ValueError, OSError, ImportError) as exc:
+    except (FileNotFoundError, NotADirectoryError, ValueError, OSError, ImportError, TypeError) as exc:
         print(f"Pipeline skeleton run failed: {exc}")
         return 1
 

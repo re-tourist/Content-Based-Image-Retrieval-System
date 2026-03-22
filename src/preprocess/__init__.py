@@ -1,3 +1,3 @@
-from .basic_preprocess import PreprocessResult, preprocess_image
+from .basic_preprocess import PreprocessResult, SUPPORTED_COLOR_MODES, preprocess_image
 
-__all__ = ["PreprocessResult", "preprocess_image"]
+__all__ = ["PreprocessResult", "SUPPORTED_COLOR_MODES", "preprocess_image"]

@@ -16,6 +16,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PLACEHOLDER_RESULT_COUNT = 4
 
 
+
 def load_demo_config(config_path: str | None = None) -> tuple[dict[str, Any], Path]:
     resolved_path = Path(config_path or get_default_config_path()).expanduser()
     if not resolved_path.is_absolute():
@@ -24,6 +25,7 @@ def load_demo_config(config_path: str | None = None) -> tuple[dict[str, Any], Pa
         resolved_path = resolved_path.resolve()
 
     return load_config(str(resolved_path)), resolved_path
+
 
 
 def run_demo_bridge(query_image_path: str | None) -> tuple[str, list[tuple[np.ndarray, str]]]:
@@ -43,7 +45,9 @@ def run_demo_bridge(query_image_path: str | None) -> tuple[str, list[tuple[np.nd
             "### Pipeline Status",
             f"- Config loaded from `{config_path}`",
             f"- Query image loaded: `{Path(query_image_path).name}` shape={shape_of(image)}",
-            f"- Preprocess stage completed: steps={preprocess_result.meta.get('applied_steps')}",
+            f"- Preprocess stage completed: original_shape={preprocess_result.original_shape}",
+            f"- Processed image shape={preprocess_result.processed_shape} color_mode={preprocess_result.color_mode}",
+            f"- Applied preprocess steps: {preprocess_result.meta.get('applied_steps')}",
             "- Local feature stage executed as placeholder",
             f"- Placeholder method: `{feature_result.meta.get('method')}`",
             "- Top-K results below are placeholders for future retrieval outputs",
@@ -51,6 +55,7 @@ def run_demo_bridge(query_image_path: str | None) -> tuple[str, list[tuple[np.nd
         ]
     )
     return status, build_placeholder_gallery()
+
 
 
 def build_demo() -> gr.Blocks:
@@ -93,6 +98,7 @@ def build_demo() -> gr.Blocks:
     return demo
 
 
+
 def load_query_image(image_path: str | Path) -> np.ndarray:
     path = Path(image_path).expanduser().resolve()
     if not path.exists():
@@ -106,6 +112,7 @@ def load_query_image(image_path: str | Path) -> np.ndarray:
     return image
 
 
+
 def build_placeholder_gallery() -> list[tuple[np.ndarray, str]]:
     return [
         (
@@ -114,6 +121,7 @@ def build_placeholder_gallery() -> list[tuple[np.ndarray, str]]:
         )
         for index in range(PLACEHOLDER_RESULT_COUNT)
     ]
+
 
 
 def create_placeholder_card(rank: int, size: tuple[int, int] = (320, 320)) -> np.ndarray:
@@ -138,6 +146,7 @@ def create_placeholder_card(rank: int, size: tuple[int, int] = (320, 320)) -> np
     return canvas
 
 
+
 def _get_mapping(config: dict[str, Any], key: str) -> dict[str, Any]:
     value = config.get(key)
     if value is None:
@@ -145,6 +154,7 @@ def _get_mapping(config: dict[str, Any], key: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError(f"Config section '{key}' must be a mapping.")
     return value
+
 
 
 def shape_of(image: Any) -> tuple[int, ...] | None:
