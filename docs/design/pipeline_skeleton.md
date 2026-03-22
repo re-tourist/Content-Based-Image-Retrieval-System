@@ -2,8 +2,9 @@
 
 ## Purpose
 
-This document defines the runnable Stage 1 pipeline skeleton for the main project.  
-The goal is to keep the call chain explicit and stable before Stage 2 data preparation and Stage 3 local feature extraction are implemented in depth.
+This document defines the runnable Stage 1 pipeline skeleton for the main project.
+The goal is to keep the call chain explicit and stable before Stage 2 data preparation
+and Stage 3 local feature extraction are implemented in depth.
 
 ## Current Stage Boundaries
 
@@ -24,7 +25,7 @@ Current non-goals:
 | Stage | Module | Responsibility | Input | Output | Status |
 | --- | --- | --- | --- | --- | --- |
 | Dataset | `src/datasets/dataset_loader.py` | Scan image directory, build sample records, load images | dataset directory, sample record | `ImageSample`, loaded image | Connected |
-| Basic Preprocess | `src/preprocess/basic_preprocess.py` | Apply minimal preprocessing or passthrough | image, preprocess config | `PreprocessResult` | Connected |
+| Basic Preprocess | `src/preprocess/basic_preprocess.py` | Validate image input and apply minimal resize or color conversion | image, preprocess config | `PreprocessResult` | Connected |
 | Local Features | `src/features/local/local_feature_extractor.py` | Define local feature extraction result structure | processed image, feature config | `LocalFeatureResult` | Placeholder interface |
 | Feature Save | `scripts/run_pipeline.py` | Reserve feature saving hook | sample, feature result, output config | no-op console placeholder | Placeholder hook |
 | Visualization | `scripts/run_pipeline.py` | Reserve keypoint visualization hook | sample, image, feature result, output config | no-op console placeholder | Placeholder hook |
@@ -54,9 +55,11 @@ Primary types and functions:
 
 Current behavior:
 
-- Defaults to passthrough
-- Optionally supports lightweight grayscale conversion when `to_grayscale` is enabled
-- Returns structured metadata including input shape, output shape and applied steps
+- Validates that the input is a non-empty OpenCV-style `numpy.ndarray`
+- Supports minimal resize through `preprocess.resize.enabled`, `width`, and `height`
+- Supports `color_mode=keep` and `color_mode=gray`
+- Returns structured metadata including original shape, processed shape, color mode and applied steps
+- Does not perform augmentation, denoising, caching or deep learning style normalization
 
 ### Local Feature Extraction
 
@@ -134,7 +137,7 @@ The current skeleton intentionally reserves the following future hook chain afte
 7. Dense global retrieval
 8. Hybrid fusion
 
-These are only reserved as hook positions in code comments and documentation.  
+These are only reserved as hook positions in code comments and documentation.
 They are not implemented in Stage 1.
 
 ## Implementation Status Summary
@@ -143,7 +146,7 @@ Already connected:
 
 - Config loading
 - Dataset loading
-- Basic preprocess stage
+- Basic preprocess stage with resize and grayscale support
 - Pipeline stage sequencing from the main script
 
 Placeholder by design:
@@ -155,7 +158,7 @@ Placeholder by design:
 
 ## Why This Skeleton Exists
 
-This skeleton is not the final system architecture.  
+This skeleton is not the final system architecture.
 Its purpose is to:
 
 - keep the main call chain runnable
