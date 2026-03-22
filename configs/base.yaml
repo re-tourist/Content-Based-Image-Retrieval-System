@@ -26,6 +26,10 @@ local_feature:
   max_samples: 3
   orb_nfeatures: 500
 
+visualization:
+  enabled: true
+  save_keypoints: true
+
 output:
   feature_dir: outputs/features
   index_dir: outputs/indices

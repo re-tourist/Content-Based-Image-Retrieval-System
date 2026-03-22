@@ -4,7 +4,8 @@
 
 This document defines the runnable pipeline skeleton for the main project.
 The goal is to keep the call chain explicit and stable while the system moves from
-Stage 1 skeleton work into Stage 2 data preparation and Stage 3 local feature extraction.
+Stage 1 skeleton work into Stage 2 data preparation and Stage 3 local feature extraction
+and visualization.
 
 ## Current Stage Boundaries
 
@@ -18,7 +19,7 @@ Current non-goals:
 - No retrieval, ranking, or reranking pipeline
 - No codebook / TF-IDF / inverted index logic
 - No query expansion or dense retrieval logic
-- No real keypoint drawing yet
+- No query-gallery comparison figures yet
 
 ## Stage Overview
 
@@ -28,7 +29,7 @@ Current non-goals:
 | Basic Preprocess | `src/preprocess/basic_preprocess.py` | Validate image input and apply minimal resize or color conversion | image, preprocess config | `PreprocessResult` | Connected |
 | Local Features | `src/features/local/local_feature_extractor.py` | Extract real local features with OpenCV and return serializable results | processed image, local feature config | `LocalFeatureResult` | Connected |
 | Feature Save | `scripts/run_pipeline.py` + `src/features/local/local_feature_extractor.py` | Save extracted features as `.npz` files | sample id, feature result, output config | `outputs/features/*.npz` | Connected |
-| Visualization | `scripts/run_pipeline.py` | Reserve keypoint visualization hook | sample, image, feature result, output config | no-op console placeholder | Placeholder hook |
+| Visualization | `src/visualization/keypoints.py` + `scripts/run_pipeline.py` | Render and save single-image keypoint overlays | sample id, processed image, keypoints, output config | `outputs/figures/keypoints_*.png` | Connected |
 
 ## Module Interfaces
 
@@ -99,16 +100,19 @@ Saved content includes at least:
 - `descriptors`
 - descriptor presence and descriptor metadata
 
-### Visualization
+### Keypoint Visualization
 
-Current interface location:
+Primary types and functions:
 
-- `visualize_keypoints(sample, image, feature_result, output_config)` in `scripts/run_pipeline.py`
+- `render_keypoint_overlay(image, keypoints, label=None)`
+- `save_keypoint_visualization(sample_id, image, keypoints, output_dir, label=None)`
 
 Current behavior:
 
-- Placeholder only
-- Prints target figure directory and placeholder status
+- draws serialized keypoints directly from the `LocalFeatureResult.keypoints` array
+- saves single-image overlays as `outputs/figures/keypoints_*.png`
+- handles empty keypoint arrays by saving a valid image with a keypoint count label
+- does not implement matching lines, RANSAC views, or retrieval result layouts
 
 ## Runnable Call Order
 
@@ -122,7 +126,7 @@ The current skeleton is executed in this order:
 6. Run `preprocess_image(...)`
 7. Run `extract_local_features(...)`
 8. Save features to `outputs/features/*.npz`
-9. Run `visualize_keypoints(...)`
+9. Save keypoint figures to `outputs/figures/keypoints_*.png`
 10. Exit cleanly
 
 Pseudo-shape:
@@ -132,12 +136,17 @@ image = loader.load_image(sample)
 preprocess_result = preprocess_image(image, preprocess_config)
 feature_result = extract_local_features(preprocess_result.image, local_feature_config)
 save_path = save_local_feature_result(sample.sample_id, feature_result, output_dir)
-visualize_keypoints(sample, preprocess_result.image, feature_result, output_config)
+figure_path = save_keypoint_visualization(
+    sample.sample_id,
+    preprocess_result.image,
+    feature_result.keypoints,
+    figure_dir,
+)
 ```
 
 ## Future Hook Positions
 
-The current skeleton intentionally reserves the following future hook chain after local feature extraction and feature saving:
+The current skeleton intentionally reserves the following future hook chain after local feature extraction, feature saving, and single-image keypoint visualization:
 
 1. Feature encoding
 2. TF-IDF representation
@@ -149,7 +158,7 @@ The current skeleton intentionally reserves the following future hook chain afte
 8. Hybrid fusion
 
 These are only reserved as hook positions in code comments and documentation.
-They are not implemented in Stage 3.1.
+They are not implemented in Stage 3.2.
 
 ## Implementation Status Summary
 
@@ -160,11 +169,12 @@ Already connected:
 - Basic preprocess stage with resize and grayscale support
 - Real local feature extraction with SIFT and ORB
 - Feature saving to `.npz`
+- Keypoint visualization saving to `.png`
 - Pipeline stage sequencing from the main script
 
 Placeholder by design:
 
-- Keypoint visualization stage
+- Query-gallery comparison visualization
 - All later retrieval modules
 
 ## Why This Skeleton Exists
@@ -174,5 +184,5 @@ Its purpose is to:
 
 - keep the main call chain runnable
 - make module boundaries explicit
-- produce reusable feature files for later stages
+- produce reusable feature files and figures for later stages
 - prevent premature implementation of matching and retrieval logic
