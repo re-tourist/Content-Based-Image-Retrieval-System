@@ -1,188 +1,267 @@
 # Pipeline Skeleton
 
-## Purpose
+## Scope
 
-This document defines the runnable pipeline skeleton for the main project.
-The goal is to keep the call chain explicit and stable while the system moves from
-Stage 1 skeleton work into Stage 2 data preparation and Stage 3 local feature extraction
-and visualization.
+This document describes the pipeline that is actually implemented in the repository today.
+It is intended to be code-aligned and usable as the handoff point for the next stage:
+Feature Encoding.
 
-## Current Stage Boundaries
+## Actual End-to-End Flow
 
-Current runnable pipeline:
+The current runnable path in `scripts/run_pipeline.py` is:
 
-`dataset loader -> basic preprocess -> local feature extraction -> feature save -> keypoint visualization`
+`raw image -> dataset loader -> preprocess -> local feature extraction -> feature save -> keypoint visualization`
 
-Current non-goals:
+In concrete terms:
 
-- No image matching workflow
-- No retrieval, ranking, or reranking pipeline
-- No codebook / TF-IDF / inverted index logic
-- No query expansion or dense retrieval logic
-- No query-gallery comparison figures yet
+1. Resolve config from `configs/base.yaml`
+2. Resolve a dataset image directory
+3. Build `ImageDatasetLoader`
+4. Read a few sample images
+5. Preprocess each image
+6. Extract local features
+7. Save features to `outputs/features/*.npz`
+8. Save keypoint figures to `outputs/figures/keypoints_*.png`
 
-## Stage Overview
+## Stage-by-Stage Description
 
-| Stage | Module | Responsibility | Input | Output | Status |
+| Stage | Main Module | Input | Output | Responsibility | Status |
 | --- | --- | --- | --- | --- | --- |
-| Dataset | `src/datasets/dataset_loader.py` | Scan image directory, build sample records, load images | dataset directory, sample record | `ImageSample`, loaded image | Connected |
-| Basic Preprocess | `src/preprocess/basic_preprocess.py` | Validate image input and apply minimal resize or color conversion | image, preprocess config | `PreprocessResult` | Connected |
-| Local Features | `src/features/local/local_feature_extractor.py` | Extract real local features with OpenCV and return serializable results | processed image, local feature config | `LocalFeatureResult` | Connected |
-| Feature Save | `scripts/run_pipeline.py` + `src/features/local/local_feature_extractor.py` | Save extracted features as `.npz` files | sample id, feature result, output config | `outputs/features/*.npz` | Connected |
-| Visualization | `src/visualization/keypoints.py` + `scripts/run_pipeline.py` | Render and save single-image keypoint overlays | sample id, processed image, keypoints, output config | `outputs/figures/keypoints_*.png` | Connected |
+| Dataset Loader | `src/datasets/dataset_loader.py` | dataset directory or split file | `ImageSample`, loaded `numpy.ndarray` image | enumerate samples and load image bytes through OpenCV | Implemented |
+| Preprocess | `src/preprocess/basic_preprocess.py` | OpenCV image, preprocess config | `PreprocessResult` | validate image, resize, optional grayscale conversion | Implemented |
+| Local Feature Extraction | `src/features/local/local_feature_extractor.py` | preprocessed image, local feature config | `LocalFeatureResult` | run SIFT or ORB and return serializable feature data | Implemented |
+| Feature Save | `src/features/local/local_feature_extractor.py` + `scripts/run_pipeline.py` | `sample_id`, `LocalFeatureResult`, output dir | `.npz` file under `outputs/features/` | persist extracted features in a stable on-disk format | Implemented |
+| Keypoint Visualization | `src/visualization/keypoints.py` + `scripts/run_pipeline.py` | preprocessed image, serialized keypoints, output dir | `.png` figure under `outputs/figures/` | draw single-image keypoint overlays for inspection and reporting | Implemented |
+| Feature Encoding | not implemented yet | saved or in-memory descriptors | encoded representation | convert descriptors into the next-stage representation | Not implemented |
+| Retrieval / Indexing / Matching | not implemented yet | encoded features or descriptors | retrieval outputs | ranking, indexing, matching, and search logic | Not implemented |
+
+## Important Runtime Notes
+
+- `scripts/run_pipeline.py` currently uses directory-scan mode when it builds `ImageDatasetLoader`.
+- The loader already supports split-file mode, but the main pipeline entry does not yet instantiate it through `train.txt`, `gallery.txt`, or `query.txt`.
+- `scripts/build_splits.py` is the tool that currently builds the split manifests.
+- Keypoint visualization is drawn on the preprocessed image, not on the original raw-resolution image. This is intentional because the extracted keypoint coordinates correspond to the preprocessed image space.
 
 ## Module Interfaces
 
-### Dataset
+### Dataset Sample Structure
 
-Primary types and functions:
+`ImageSample` fields:
 
-- `ImageSample`
-- `ImageDatasetLoader`
-- `ImageDatasetLoader.load_image(sample)`
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `sample_id` | `str` | stable sample identifier, usually a relative path-like id |
+| `image_path` | `pathlib.Path` | resolved filesystem path to the image |
+| `file_name` | `str` | basename of the image file |
+| `split` | `str` | current split label such as `train`, `test`, or `unspecified` |
+| `meta` | `dict[str, Any]` | lightweight metadata, currently including at least `relative_path` |
 
-Behavior:
+Loader behaviors that matter for downstream work:
 
-- Provides ordered sample records
-- Provides image loading for downstream stages
-- Keeps sample metadata stable for future split/query/gallery extensions
+- directory mode: recursively scans a directory and builds ordered samples
+- split-file mode: resolves each line in a split manifest relative to a data root
+- `load_image(...)`: returns an OpenCV image as `numpy.ndarray`
 
-### Basic Preprocess
+### PreprocessResult Structure
 
-Primary types and functions:
+`PreprocessResult` fields:
 
-- `PreprocessResult`
-- `preprocess_image(image, config)`
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `image` | `numpy.ndarray` | processed image passed to later stages |
+| `original_shape` | `tuple[int, ...]` | shape before preprocessing |
+| `processed_shape` | `tuple[int, ...]` | shape after preprocessing |
+| `color_mode` | `str` | final output color mode, currently `keep` or `gray` |
+| `meta` | `dict[str, Any]` | preprocessing metadata |
 
-Current behavior:
+Current `meta` keys used by the pipeline:
 
-- Validates that the input is a non-empty OpenCV-style `numpy.ndarray`
-- Supports minimal resize through `preprocess.resize.enabled`, `width`, and `height`
-- Supports `color_mode=keep` and `color_mode=gray`
-- Returns structured metadata including original shape, processed shape, color mode and applied steps
-- Does not perform augmentation, denoising, caching or deep learning style normalization
+- `stage`
+- `status`
+- `applied_steps`
+- `input_shape`
+- `output_shape`
+- `requested_color_mode`
+- `resize`
 
-### Local Feature Extraction
+### LocalFeatureResult Structure
 
-Primary types and functions:
+`LocalFeatureResult` fields:
 
-- `LocalFeatureResult`
-- `extract_local_features(image, config)`
-- `save_local_feature_result(sample_id, feature_result, output_dir)`
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `keypoints` | `numpy.ndarray` | serialized keypoints with shape `N x 7` |
+| `descriptors` | `numpy.ndarray | None` | descriptor matrix or `None` when no descriptors exist |
+| `meta` | `dict[str, Any]` | extraction metadata |
 
-Current behavior:
+#### `keypoints` format
 
-- Supports `SIFT` and `ORB`
-- Converts OpenCV keypoints into a serializable `Nx7` array with the columns:
-  - `x`
-  - `y`
-  - `size`
-  - `angle`
-  - `response`
-  - `octave`
-  - `class_id`
-- Returns descriptor arrays exactly as produced by OpenCV
-- Handles empty feature results without crashing
-- Does not perform matching, encoding, indexing or retrieval
+`LocalFeatureResult.keypoints` uses shape `N x 7`.
+Column order is fixed as:
 
-### Feature Save
+1. `x`
+2. `y`
+3. `size`
+4. `angle`
+5. `response`
+6. `octave`
+7. `class_id`
 
-Saved file format:
+This array is serialized from OpenCV keypoints and is the only keypoint representation used by downstream code.
 
-- compressed `.npz`
+#### `descriptors` format
 
-Saved content includes at least:
+Current descriptor behavior depends on the extractor:
 
-- `sample_id`
+- `SIFT`: descriptor shape is typically `N x 128`, dtype is `float32`
+- `ORB`: descriptor shape is typically `N x 32`, dtype is `uint8`
+- empty-result case: `descriptors` is `None` in memory
+
+The next stage must not assume a single descriptor dtype across methods.
+
+#### `meta` fields
+
+Current extraction metadata includes:
+
+- `stage`
+- `status`
 - `method`
 - `num_keypoints`
-- `keypoints`
-- `descriptors`
-- descriptor presence and descriptor metadata
+- `descriptor_shape`
+- `descriptor_dtype`
+- `input_shape`
+- `working_image_shape`
+- `keypoint_fields`
 
-### Keypoint Visualization
+## Feature File Format: `outputs/features/*.npz`
 
-Primary types and functions:
+Each extracted feature file is saved as a compressed `.npz` file.
+The file name is derived from `sample_id` by replacing path separators and other non-safe characters with `__`.
 
-- `render_keypoint_overlay(image, keypoints, label=None)`
-- `save_keypoint_visualization(sample_id, image, keypoints, output_dir, label=None)`
+Example output name:
 
-Current behavior:
+- `A03Z78__A03Z78_20151127145344_6753243118.jpg.npz`
 
-- draws serialized keypoints directly from the `LocalFeatureResult.keypoints` array
-- saves single-image overlays as `outputs/figures/keypoints_*.png`
-- handles empty keypoint arrays by saving a valid image with a keypoint count label
-- does not implement matching lines, RANSAC views, or retrieval result layouts
+### Saved keys
 
-## Runnable Call Order
+| Key | Shape / Type | Meaning |
+| --- | --- | --- |
+| `sample_id` | scalar string array | original sample id |
+| `method` | scalar string array | extractor method, currently `SIFT` or `ORB` |
+| `num_keypoints` | scalar `int32` array | number of serialized keypoints |
+| `keypoints` | `N x 7` float array | serialized keypoints |
+| `descriptors` | descriptor matrix or empty array | saved descriptor matrix |
+| `descriptors_present` | scalar `uint8` array | `1` if descriptors existed in memory, else `0` |
+| `descriptor_shape` | shape array | saved descriptor shape metadata |
+| `descriptor_dtype` | scalar string array | saved descriptor dtype metadata |
+| `keypoint_fields` | string array | keypoint column names |
 
-The current skeleton is executed in this order:
+### How future modules should read `.npz`
 
-1. Load config from `configs/base.yaml`
-2. Resolve dataset image directory
-3. Build `ImageDatasetLoader`
-4. Select a few sample records for demonstration
-5. Load image from dataset stage
-6. Run `preprocess_image(...)`
-7. Run `extract_local_features(...)`
-8. Save features to `outputs/features/*.npz`
-9. Save keypoint figures to `outputs/figures/keypoints_*.png`
-10. Exit cleanly
+The next stage should read feature files with `allow_pickle=False` and use `descriptors_present` to decide whether a descriptor matrix is meaningful.
 
-Pseudo-shape:
+Example read pattern:
 
 ```python
-image = loader.load_image(sample)
-preprocess_result = preprocess_image(image, preprocess_config)
-feature_result = extract_local_features(preprocess_result.image, local_feature_config)
-save_path = save_local_feature_result(sample.sample_id, feature_result, output_dir)
-figure_path = save_keypoint_visualization(
-    sample.sample_id,
-    preprocess_result.image,
-    feature_result.keypoints,
-    figure_dir,
-)
+import numpy as np
+
+with np.load(feature_path, allow_pickle=False) as data:
+    descriptors_present = bool(int(data["descriptors_present"]))
+    descriptors = data["descriptors"] if descriptors_present else None
+    keypoints = data["keypoints"]
+    method = str(data["method"])
 ```
 
-## Future Hook Positions
+Encoding code should treat these cases explicitly:
 
-The current skeleton intentionally reserves the following future hook chain after local feature extraction, feature saving, and single-image keypoint visualization:
+- `descriptors_present == 0`: skip or mark as empty
+- `method == "SIFT"`: descriptors are float-valued vectors
+- `method == "ORB"`: descriptors are binary-style `uint8` vectors
 
-1. Feature encoding
-2. TF-IDF representation
-3. Inverted index
-4. Retrieval
-5. Rerank
-6. Query expansion
-7. Dense global retrieval
-8. Hybrid fusion
+## What Is Implemented
 
-These are only reserved as hook positions in code comments and documentation.
-They are not implemented in Stage 3.2.
+- config loading from `configs/base.yaml`
+- dataset loading from directory scan mode in the main pipeline
+- split manifest generation through `scripts/build_splits.py`
+- split-file support inside `ImageDatasetLoader`
+- minimal preprocess with validation, resize, and grayscale conversion
+- real local feature extraction with SIFT and ORB
+- `.npz` feature saving
+- single-image keypoint visualization to `.png`
+- minimal Gradio demo entry point
 
-## Implementation Status Summary
+## What Is NOT Implemented
 
-Already connected:
+- feature encoding
+- codebook generation
+- TF-IDF
+- inverted index construction
+- query-gallery retrieval
+- feature matching workflows
+- query-gallery comparison figures
+- RANSAC-based visualization
+- reranking, query expansion, dense retrieval, or hybrid fusion
 
-- Config loading
-- Dataset loading
-- Basic preprocess stage with resize and grayscale support
-- Real local feature extraction with SIFT and ORB
-- Feature saving to `.npz`
-- Keypoint visualization saving to `.png`
-- Pipeline stage sequencing from the main script
+## Next Stage: Feature Encoding
 
-Placeholder by design:
+The next stage should consume descriptor matrices, not raw images and not OpenCV keypoint objects.
 
-- Query-gallery comparison visualization
-- All later retrieval modules
+### Encoding input
 
-## Why This Skeleton Exists
+Encoding should accept either:
 
-This skeleton is not the final retrieval system architecture.
-Its purpose is to:
+- in-memory `LocalFeatureResult.descriptors`
+- or descriptors loaded from `outputs/features/*.npz`
 
-- keep the main call chain runnable
-- make module boundaries explicit
-- produce reusable feature files and figures for later stages
-- prevent premature implementation of matching and retrieval logic
+The stable handoff contract is the descriptor matrix plus method metadata.
+
+### Where descriptors come from
+
+Descriptors are produced in:
+
+- `src/features/local/local_feature_extractor.py`
+
+They are persisted by:
+
+- `save_local_feature_result(...)`
+
+They are saved under:
+
+- `outputs/features/*.npz`
+
+### Where encoding should connect
+
+The clean integration point is after feature saving and before any retrieval or indexing logic.
+In the current pipeline, that means inserting a new stage after:
+
+- `extract_local_features(...)`
+- `save_local_feature_result(...)`
+
+and before any future retrieval-specific logic.
+
+A stage-correct next-step shape is:
+
+```python
+feature_result = extract_local_features(preprocess_result.image, local_feature_config)
+save_path = save_local_feature_result(sample.sample_id, feature_result, feature_dir)
+encoding_result = encode_local_features(feature_result.descriptors, encoding_config)
+```
+
+or, for offline processing:
+
+```python
+with np.load(feature_path, allow_pickle=False) as data:
+    descriptors = ...
+encoding_result = encode_local_features(descriptors, encoding_config)
+```
+
+### Constraints for the next stage
+
+The encoding stage should account for:
+
+- empty descriptor cases
+- method-dependent descriptor dtype and shape
+- the fact that `run_pipeline.py` currently processes only a small sample preview for demonstration
+- the fact that feature files already exist as the on-disk contract
+
+Encoding should be added as a new stage, not by rewriting the current local feature extraction stage.
