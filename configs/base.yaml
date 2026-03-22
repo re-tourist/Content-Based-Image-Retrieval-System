@@ -30,6 +30,19 @@ visualization:
   enabled: true
   save_keypoints: true
 
+encoding:
+  enabled: false
+  input:
+    feature_dir: outputs/features
+  codebook:
+    enabled: false
+    output_dir: outputs/indices/codebooks
+    trainer: minibatch_kmeans
+    n_clusters: 256
+    max_descriptors: 50000
+    batch_size: 1024
+    random_state: 42
+
 output:
   feature_dir: outputs/features
   index_dir: outputs/indices
