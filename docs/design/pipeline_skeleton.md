@@ -2,9 +2,9 @@
 
 ## Purpose
 
-This document defines the runnable Stage 1 pipeline skeleton for the main project.
-The goal is to keep the call chain explicit and stable before Stage 2 data preparation
-and Stage 3 local feature extraction are implemented in depth.
+This document defines the runnable pipeline skeleton for the main project.
+The goal is to keep the call chain explicit and stable while the system moves from
+Stage 1 skeleton work into Stage 2 data preparation and Stage 3 local feature extraction.
 
 ## Current Stage Boundaries
 
@@ -14,11 +14,11 @@ Current runnable pipeline:
 
 Current non-goals:
 
-- No full preprocessing workflow
-- No real SIFT / ORB extraction in the mainline
-- No real feature file serialization
-- No real keypoint drawing
-- No encoding / TF-IDF / indexing / retrieval / rerank / QE / dense retrieval logic
+- No image matching workflow
+- No retrieval, ranking, or reranking pipeline
+- No codebook / TF-IDF / inverted index logic
+- No query expansion or dense retrieval logic
+- No real keypoint drawing yet
 
 ## Stage Overview
 
@@ -26,8 +26,8 @@ Current non-goals:
 | --- | --- | --- | --- | --- | --- |
 | Dataset | `src/datasets/dataset_loader.py` | Scan image directory, build sample records, load images | dataset directory, sample record | `ImageSample`, loaded image | Connected |
 | Basic Preprocess | `src/preprocess/basic_preprocess.py` | Validate image input and apply minimal resize or color conversion | image, preprocess config | `PreprocessResult` | Connected |
-| Local Features | `src/features/local/local_feature_extractor.py` | Define local feature extraction result structure | processed image, feature config | `LocalFeatureResult` | Placeholder interface |
-| Feature Save | `scripts/run_pipeline.py` | Reserve feature saving hook | sample, feature result, output config | no-op console placeholder | Placeholder hook |
+| Local Features | `src/features/local/local_feature_extractor.py` | Extract real local features with OpenCV and return serializable results | processed image, local feature config | `LocalFeatureResult` | Connected |
+| Feature Save | `scripts/run_pipeline.py` + `src/features/local/local_feature_extractor.py` | Save extracted features as `.npz` files | sample id, feature result, output config | `outputs/features/*.npz` | Connected |
 | Visualization | `scripts/run_pipeline.py` | Reserve keypoint visualization hook | sample, image, feature result, output config | no-op console placeholder | Placeholder hook |
 
 ## Module Interfaces
@@ -67,26 +67,37 @@ Primary types and functions:
 
 - `LocalFeatureResult`
 - `extract_local_features(image, config)`
+- `save_local_feature_result(sample_id, feature_result, output_dir)`
 
 Current behavior:
 
-- Returns a structured placeholder result
-- Fixes the output shape for later real implementations:
-  - `keypoints`
-  - `descriptors`
-  - `meta`
-- Does not perform real SIFT / ORB extraction yet
+- Supports `SIFT` and `ORB`
+- Converts OpenCV keypoints into a serializable `Nx7` array with the columns:
+  - `x`
+  - `y`
+  - `size`
+  - `angle`
+  - `response`
+  - `octave`
+  - `class_id`
+- Returns descriptor arrays exactly as produced by OpenCV
+- Handles empty feature results without crashing
+- Does not perform matching, encoding, indexing or retrieval
 
 ### Feature Save
 
-Current interface location:
+Saved file format:
 
-- `save_feature_result(sample, feature_result, output_config)` in `scripts/run_pipeline.py`
+- compressed `.npz`
 
-Current behavior:
+Saved content includes at least:
 
-- Placeholder only
-- Prints target feature directory and placeholder status
+- `sample_id`
+- `method`
+- `num_keypoints`
+- `keypoints`
+- `descriptors`
+- descriptor presence and descriptor metadata
 
 ### Visualization
 
@@ -110,7 +121,7 @@ The current skeleton is executed in this order:
 5. Load image from dataset stage
 6. Run `preprocess_image(...)`
 7. Run `extract_local_features(...)`
-8. Run `save_feature_result(...)`
+8. Save features to `outputs/features/*.npz`
 9. Run `visualize_keypoints(...)`
 10. Exit cleanly
 
@@ -119,14 +130,14 @@ Pseudo-shape:
 ```python
 image = loader.load_image(sample)
 preprocess_result = preprocess_image(image, preprocess_config)
-feature_result = extract_local_features(preprocess_result.image, feature_config)
-save_feature_result(sample, feature_result, output_config)
+feature_result = extract_local_features(preprocess_result.image, local_feature_config)
+save_path = save_local_feature_result(sample.sample_id, feature_result, output_dir)
 visualize_keypoints(sample, preprocess_result.image, feature_result, output_config)
 ```
 
 ## Future Hook Positions
 
-The current skeleton intentionally reserves the following future hook chain after local feature extraction:
+The current skeleton intentionally reserves the following future hook chain after local feature extraction and feature saving:
 
 1. Feature encoding
 2. TF-IDF representation
@@ -138,7 +149,7 @@ The current skeleton intentionally reserves the following future hook chain afte
 8. Hybrid fusion
 
 These are only reserved as hook positions in code comments and documentation.
-They are not implemented in Stage 1.
+They are not implemented in Stage 3.1.
 
 ## Implementation Status Summary
 
@@ -147,21 +158,21 @@ Already connected:
 - Config loading
 - Dataset loading
 - Basic preprocess stage with resize and grayscale support
+- Real local feature extraction with SIFT and ORB
+- Feature saving to `.npz`
 - Pipeline stage sequencing from the main script
 
 Placeholder by design:
 
-- Local feature extraction result generation
-- Feature save stage
-- Visualization stage
+- Keypoint visualization stage
 - All later retrieval modules
 
 ## Why This Skeleton Exists
 
-This skeleton is not the final system architecture.
+This skeleton is not the final retrieval system architecture.
 Its purpose is to:
 
 - keep the main call chain runnable
 - make module boundaries explicit
-- prevent premature implementation of later stages
-- give Stage 2 and Stage 3 a stable integration point
+- produce reusable feature files for later stages
+- prevent premature implementation of matching and retrieval logic

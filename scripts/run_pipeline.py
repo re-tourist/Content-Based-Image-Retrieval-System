@@ -11,7 +11,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.datasets import ImageDatasetLoader, ImageSample
-from src.features.local import LocalFeatureResult, extract_local_features
+from src.features.local import LocalFeatureResult, extract_local_features, save_local_feature_result
 from src.preprocess import PreprocessResult, preprocess_image
 from src.utils import get_default_config_path, load_config
 
@@ -112,11 +112,14 @@ def print_dataset_summary(loader: ImageDatasetLoader, image_dir: Path, resolved_
 
 def run_pipeline_skeleton(loader: ImageDatasetLoader, config: dict[str, Any]) -> None:
     preprocess_config = _get_mapping(config, "preprocess")
-    feature_config = _get_mapping(config, "feature")
+    local_feature_config = _get_local_feature_config(config)
     output_config = _get_mapping(config, "output")
-    samples = loader.preview(min(DEFAULT_PREVIEW_COUNT, len(loader)))
+    sample_limit = min(_resolve_max_samples(local_feature_config), len(loader))
+    samples = loader.preview(sample_limit)
 
     print(f"Running pipeline skeleton on first {len(samples)} samples")
+    print(f"Local feature method: {str(local_feature_config.get('method', local_feature_config.get('local_method', 'sift'))).lower()}")
+
     for sample in samples:
         print(f"Sample: id={sample.sample_id} file={sample.file_name} split={sample.split}")
 
@@ -126,11 +129,14 @@ def run_pipeline_skeleton(loader: ImageDatasetLoader, config: dict[str, Any]) ->
         preprocess_result = preprocess_image(image, preprocess_config)
         print_preprocess_stage(sample, preprocess_result)
 
-        feature_result = extract_local_features(preprocess_result.image, feature_config)
+        feature_result = extract_local_features(preprocess_result.image, local_feature_config)
         print_local_feature_stage(sample, feature_result)
 
-        save_feature_result(sample, feature_result, output_config)
+        save_path = save_feature_result(sample, feature_result, local_feature_config, output_config)
         visualize_keypoints(sample, preprocess_result.image, feature_result, output_config)
+
+        if save_path is not None:
+            print(f"Saved features to {save_path}")
 
         # Future hooks: feature encoding -> tf-idf -> inverted index -> retrieval
         # -> rerank -> query expansion -> dense global retrieval -> hybrid fusion
@@ -154,9 +160,10 @@ def print_preprocess_stage(sample: ImageSample, result: PreprocessResult) -> Non
 
 def print_local_feature_stage(sample: ImageSample, result: LocalFeatureResult) -> None:
     print(
-        "Local feature stage placeholder executed for "
+        "Local feature stage completed for "
         f"{sample.file_name} method={result.meta.get('method')} "
-        f"keypoints={len(result.keypoints)}"
+        f"keypoints={result.meta.get('num_keypoints')} "
+        f"descriptor_shape={result.meta.get('descriptor_shape')}"
     )
 
 
@@ -164,13 +171,16 @@ def print_local_feature_stage(sample: ImageSample, result: LocalFeatureResult) -
 def save_feature_result(
     sample: ImageSample,
     feature_result: LocalFeatureResult,
+    local_feature_config: dict[str, Any],
     output_config: dict[str, Any],
-) -> None:
+) -> Path | None:
+    save_enabled = bool(local_feature_config.get("save", True))
+    if not save_enabled:
+        print(f"Feature saving disabled for {sample.file_name}")
+        return None
+
     feature_dir = output_config.get("feature_dir", "outputs/features")
-    print(
-        "Save stage placeholder executed for "
-        f"{sample.file_name} target={feature_dir} descriptors={feature_result.descriptors is not None}"
-    )
+    return save_local_feature_result(sample.sample_id, feature_result, feature_dir)
 
 
 
@@ -184,8 +194,40 @@ def visualize_keypoints(
     print(
         "Visualization stage placeholder executed for "
         f"{sample.file_name} target={figure_dir} input_shape={_shape_of(image)} "
-        f"keypoints={len(feature_result.keypoints)}"
+        f"keypoints={feature_result.meta.get('num_keypoints')}"
     )
+
+
+
+def _get_local_feature_config(config: dict[str, Any]) -> dict[str, Any]:
+    value = config.get("local_feature")
+    if value is not None:
+        if not isinstance(value, dict):
+            raise ValueError("Config section 'local_feature' must be a mapping.")
+        return value
+
+    legacy_value = config.get("feature")
+    if legacy_value is None:
+        return {}
+    if not isinstance(legacy_value, dict):
+        raise ValueError("Config section 'feature' must be a mapping.")
+    return legacy_value
+
+
+
+def _resolve_max_samples(local_feature_config: dict[str, Any]) -> int:
+    value = local_feature_config.get("max_samples", DEFAULT_PREVIEW_COUNT)
+    if isinstance(value, bool):
+        raise ValueError("Config field 'local_feature.max_samples' must be a positive integer.")
+
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Config field 'local_feature.max_samples' must be a positive integer.") from exc
+
+    if parsed <= 0:
+        raise ValueError(f"Config field 'local_feature.max_samples' must be greater than zero, got {parsed}.")
+    return parsed
 
 
 
@@ -232,7 +274,7 @@ def main() -> int:
         run_pipeline_skeleton(loader, config)
         print("Pipeline skeleton run completed")
         return 0
-    except (FileNotFoundError, NotADirectoryError, ValueError, OSError, ImportError, TypeError) as exc:
+    except (FileNotFoundError, NotADirectoryError, ValueError, OSError, ImportError, RuntimeError, TypeError) as exc:
         print(f"Pipeline skeleton run failed: {exc}")
         return 1
 

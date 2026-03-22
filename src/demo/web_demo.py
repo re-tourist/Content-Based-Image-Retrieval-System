@@ -38,7 +38,7 @@ def run_demo_bridge(query_image_path: str | None) -> tuple[str, list[tuple[np.nd
     config, config_path = load_demo_config()
     image = load_query_image(query_image_path)
     preprocess_result = preprocess_image(image, _get_mapping(config, "preprocess"))
-    feature_result = extract_local_features(preprocess_result.image, _get_mapping(config, "feature"))
+    feature_result = extract_local_features(preprocess_result.image, _get_local_feature_config(config))
 
     status = "\n".join(
         [
@@ -48,8 +48,8 @@ def run_demo_bridge(query_image_path: str | None) -> tuple[str, list[tuple[np.nd
             f"- Preprocess stage completed: original_shape={preprocess_result.original_shape}",
             f"- Processed image shape={preprocess_result.processed_shape} color_mode={preprocess_result.color_mode}",
             f"- Applied preprocess steps: {preprocess_result.meta.get('applied_steps')}",
-            "- Local feature stage executed as placeholder",
-            f"- Placeholder method: `{feature_result.meta.get('method')}`",
+            f"- Local feature extraction completed: method={feature_result.meta.get('method')}",
+            f"- Num keypoints: {feature_result.meta.get('num_keypoints')} descriptor_shape={feature_result.meta.get('descriptor_shape')}",
             "- Top-K results below are placeholders for future retrieval outputs",
             "- Future hooks reserved: retrieval, keypoint visualization, local feature visualization",
         ]
@@ -75,7 +75,7 @@ def build_demo() -> gr.Blocks:
                 )
                 run_button = gr.Button("Run Pipeline Skeleton", variant="primary")
                 gr.Markdown(
-                    "This demo currently runs image loading, basic preprocess and local feature placeholder logic."
+                    "This demo currently runs image loading, basic preprocess and local feature extraction."
                 )
 
             with gr.Column(scale=1):
@@ -154,6 +154,22 @@ def _get_mapping(config: dict[str, Any], key: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError(f"Config section '{key}' must be a mapping.")
     return value
+
+
+
+def _get_local_feature_config(config: dict[str, Any]) -> dict[str, Any]:
+    value = config.get("local_feature")
+    if value is not None:
+        if not isinstance(value, dict):
+            raise ValueError("Config section 'local_feature' must be a mapping.")
+        return value
+
+    legacy_value = config.get("feature")
+    if legacy_value is None:
+        return {}
+    if not isinstance(legacy_value, dict):
+        raise ValueError("Config section 'feature' must be a mapping.")
+    return legacy_value
 
 
 

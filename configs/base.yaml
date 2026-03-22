@@ -20,8 +20,11 @@ preprocess:
     height: 256
   color_mode: gray
 
-feature:
-  local_method: sift
+local_feature:
+  method: sift
+  save: true
+  max_samples: 3
+  orb_nfeatures: 500
 
 output:
   feature_dir: outputs/features
