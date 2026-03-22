@@ -11,6 +11,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.datasets import ImageDatasetLoader, ImageSample
+from src.encoding import encode_feature_file
 from src.features.local import LocalFeatureResult, extract_local_features, save_local_feature_result
 from src.preprocess import PreprocessResult, preprocess_image
 from src.utils import get_default_config_path, load_config
@@ -116,6 +117,7 @@ def run_pipeline_skeleton(loader: ImageDatasetLoader, config: dict[str, Any]) ->
     local_feature_config = _get_local_feature_config(config)
     visualization_config = _get_visualization_config(config)
     output_config = _get_mapping(config, "output")
+    preview_encoding_enabled = _is_preview_encoding_enabled(config)
     sample_limit = min(_resolve_max_samples(local_feature_config), len(loader))
     samples = loader.preview(sample_limit)
 
@@ -123,6 +125,8 @@ def run_pipeline_skeleton(loader: ImageDatasetLoader, config: dict[str, Any]) ->
     print(f"Local feature method: {str(local_feature_config.get('method', local_feature_config.get('local_method', 'sift'))).lower()}")
     if bool(visualization_config.get("enabled", True)) and bool(visualization_config.get("save_keypoints", True)):
         print("Keypoint visualization enabled")
+    if preview_encoding_enabled:
+        print("Preview-time BoW encoding enabled")
 
     for sample in samples:
         print(f"Sample: id={sample.sample_id} file={sample.file_name} split={sample.split}")
@@ -153,8 +157,12 @@ def run_pipeline_skeleton(loader: ImageDatasetLoader, config: dict[str, Any]) ->
             )
             print(f"Saved keypoint figure to {figure_path}")
 
-        # Future hooks: feature encoding -> tf-idf -> inverted index -> retrieval
-        # -> rerank -> query expansion -> dense global retrieval -> hybrid fusion
+        encoded_path = maybe_encode_saved_feature(save_path, config)
+        if encoded_path is not None:
+            print(f"Saved encoded feature to {encoded_path}")
+
+        # Future hooks: tf-idf -> inverted index -> retrieval -> rerank
+        # -> query expansion -> dense global retrieval -> hybrid fusion
 
 
 
@@ -223,6 +231,33 @@ def visualize_keypoints(
 
 
 
+def maybe_encode_saved_feature(feature_path: Path | None, config: dict[str, Any]) -> Path | None:
+    encoding_config = _get_mapping(config, "encoding")
+    if not bool(encoding_config.get("enabled", False)):
+        return None
+
+    if feature_path is None:
+        raise ValueError(
+            "Encoding is enabled but no feature artifact was saved. "
+            "Preview-time encoding requires local_feature.save=true."
+        )
+
+    bow_config = _get_nested_mapping(encoding_config, "bow", "encoding.bow")
+    if not bool(bow_config.get("enabled", True)):
+        raise ValueError("Encoding is enabled but encoding.bow.enabled is false.")
+
+    codebook_dir = _resolve_encoding_codebook_dir(config)
+    encoded_dir = _resolve_encoding_output_dir(config)
+    normalize = _resolve_encoding_normalized(config)
+    return encode_feature_file(
+        feature_path=feature_path,
+        codebook_dir=codebook_dir,
+        output_dir=encoded_dir,
+        normalize=normalize,
+    )
+
+
+
 def _get_local_feature_config(config: dict[str, Any]) -> dict[str, Any]:
     value = config.get("local_feature")
     if value is not None:
@@ -246,6 +281,45 @@ def _get_visualization_config(config: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("Config section 'visualization' must be a mapping.")
     return value
+
+
+
+def _is_preview_encoding_enabled(config: dict[str, Any]) -> bool:
+    encoding_config = _get_mapping(config, "encoding")
+    return bool(encoding_config.get("enabled", False))
+
+
+
+def _resolve_encoding_codebook_dir(config: dict[str, Any]) -> Path:
+    encoding_config = _get_mapping(config, "encoding")
+    codebook_config = _get_nested_mapping(encoding_config, "codebook", "encoding.codebook")
+    bow_config = _get_nested_mapping(encoding_config, "bow", "encoding.bow")
+    return _require_path(
+        _first_value(codebook_config.get("output_dir"), bow_config.get("codebook_dir"), "outputs/indices/codebooks"),
+        "encoding.codebook.output_dir",
+    )
+
+
+
+def _resolve_encoding_output_dir(config: dict[str, Any]) -> Path:
+    encoding_config = _get_mapping(config, "encoding")
+    input_config = _get_nested_mapping(encoding_config, "input", "encoding.input")
+    bow_config = _get_nested_mapping(encoding_config, "bow", "encoding.bow")
+    return _require_path(
+        _first_value(input_config.get("encoded_dir"), bow_config.get("output_dir"), "outputs/encoded"),
+        "encoding.input.encoded_dir",
+    )
+
+
+
+def _resolve_encoding_normalized(config: dict[str, Any]) -> bool:
+    encoding_config = _get_mapping(config, "encoding")
+    bow_config = _get_nested_mapping(encoding_config, "bow", "encoding.bow")
+    if "normalized" in bow_config:
+        return _require_bool(bow_config.get("normalized"), "encoding.bow.normalized")
+    if "normalize" in bow_config:
+        return _require_bool(bow_config.get("normalize"), "encoding.bow.normalize")
+    return False
 
 
 
@@ -284,6 +358,31 @@ def _get_mapping(config: dict[str, Any], key: str) -> dict[str, Any]:
         return {}
     if not isinstance(value, dict):
         raise ValueError(f"Config section '{key}' must be a mapping.")
+    return value
+
+
+
+def _get_nested_mapping(parent: dict[str, Any], key: str, field_name: str) -> dict[str, Any]:
+    value = parent.get(key)
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError(f"Config section '{field_name}' must be a mapping.")
+    return value
+
+
+
+def _first_value(*values: Any) -> Any:
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
+
+def _require_bool(value: Any, field_name: str) -> bool:
+    if not isinstance(value, bool):
+        raise ValueError(f"Config field '{field_name}' must be a boolean.")
     return value
 
 

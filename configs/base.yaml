@@ -34,6 +34,7 @@ encoding:
   enabled: false
   input:
     feature_dir: outputs/features
+    encoded_dir: outputs/encoded
   codebook:
     enabled: false
     output_dir: outputs/indices/codebooks
@@ -43,10 +44,8 @@ encoding:
     batch_size: 1024
     random_state: 42
   bow:
-    enabled: false
-    codebook_dir: outputs/indices/codebooks
-    output_dir: outputs/encoded
-    normalize: false
+    enabled: true
+    normalized: false
 
 output:
   feature_dir: outputs/features

@@ -4,6 +4,7 @@ from .bow import (
     encode_bow_from_feature_record,
     encode_bow_from_input,
     encode_feature_directory,
+    encode_feature_file,
 )
 from .codebook import CodebookArtifact, load_codebook_artifact, save_codebook_artifact, train_codebook
 from .io import (
@@ -28,6 +29,7 @@ __all__ = [
     "encode_bow_from_feature_record",
     "encode_bow_from_input",
     "encode_feature_directory",
+    "encode_feature_file",
     "iter_feature_paths",
     "load_codebook_artifact",
     "load_encoded_feature",
