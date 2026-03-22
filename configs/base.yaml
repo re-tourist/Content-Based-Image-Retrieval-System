@@ -7,6 +7,11 @@ dataset:
   raw_dir: raw
   processed_dir: processed
   splits_dir: splits
+  train_source_dir: train/image
+  test_source_dir: test
+  train_split: train.txt
+  gallery_split: gallery.txt
+  query_split: query.txt
 
 preprocess:
   image_size: [224, 224]
