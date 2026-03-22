@@ -2,6 +2,8 @@
 
 ## Scope
 
+Companion document: docs/ai/PROJECT_CONTEXT.md.
+
 This document describes the pipeline that is actually implemented in the repository today.
 It is intended to be code-aligned and usable as the handoff point for the next stage:
 Feature Encoding.
