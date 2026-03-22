@@ -2,73 +2,85 @@
 
 ## Goal
 
-This document describes the minimal Stage 1 web demo for the project.  
-The demo is intended for local coursework presentation and for validating that the current pipeline skeleton can be triggered from a lightweight web UI.
+This document describes the current minimal Gradio demo for the repository.
+The demo is intended for local coursework presentation and for validating that the implemented pipeline can be triggered from a lightweight web UI.
 
 ## Why Gradio
 
-Gradio is used because it matches the current project stage:
+Gradio is still the correct choice for the current stage:
 
 - Python-native integration with the existing pipeline modules
-- Built-in image upload and preview support
-- Simple gallery output for placeholder Top-K results
-- Low setup cost for a coursework demo
+- built-in image upload and preview support
+- simple gallery output for placeholder Top-K results
+- low setup cost for a coursework demo
 
-At Stage 1, a lightweight demo shell is more appropriate than a full frontend/backend stack.
+The project does not need a separate frontend/backend stack at this stage.
 
 ## Current Demo Components
 
 The current demo contains:
 
-1. Title and short project description
-2. Query image upload component
-3. Built-in uploaded image preview
+1. title and short project description
+2. query image upload component
+3. built-in uploaded image preview
 4. `Run Pipeline Skeleton` button
-5. Pipeline status area
+5. pipeline status area
 6. `Top-K Results` gallery area
 
-## Relationship to the Current Pipeline Skeleton
+## Relationship to the Current Pipeline
 
-The web demo does not import `scripts/run_pipeline.py` as an application module.  
+The web demo does not import `scripts/run_pipeline.py` as an application module.
 Instead, it reuses the same underlying module boundaries:
 
 - config loading via `src/utils/config.py`
-- preprocess stage via `src/preprocess/basic_preprocess.py`
-- local feature placeholder stage via `src/features/local/local_feature_extractor.py`
+- preprocess via `src/preprocess/basic_preprocess.py`
+- local feature extraction via `src/features/local/local_feature_extractor.py`
 
-This keeps the CLI skeleton and the web demo aligned to the same stage boundaries.
+This keeps the CLI path and the demo aligned to the same preprocessing and feature extraction contracts.
 
 ## Demo Runtime Flow
 
 Current flow:
 
-1. User uploads a query image
-2. User clicks `Run Pipeline Skeleton`
-3. Demo loads config
-4. Demo reads the uploaded query image
-5. Demo runs the basic preprocess stage
-6. Demo runs the local feature placeholder stage
-7. Demo returns status text
-8. Demo returns placeholder Top-K gallery cards
+1. user uploads a query image
+2. user clicks `Run Pipeline Skeleton`
+3. demo loads config
+4. demo reads the uploaded query image
+5. demo runs preprocess
+6. demo runs real local feature extraction
+7. demo returns status text including preprocess and keypoint statistics
+8. demo returns placeholder Top-K gallery cards
 
 ## What Is Real vs Placeholder
 
 Already connected:
 
-- Query image upload
-- Query image preview
-- Config loading
-- Query image loading
-- Basic preprocess stage
-- Local feature interface invocation
+- query image upload
+- query image preview
+- config loading
+- query image loading
+- preprocess stage
+- real local feature extraction
+- keypoint count and descriptor shape reporting
 
 Placeholder by design:
 
-- Real retrieval over the gallery
-- Real Top-K ranking output
-- Keypoint visualization
-- Local feature visualization
-- Retrieval result explanation
+- real retrieval over the gallery
+- real Top-K ranking output
+- keypoint visualization display inside the web UI
+- local feature visualization display inside the web UI
+- retrieval result explanation
+
+## Output and Persistence Behavior
+
+The current demo is an inspection bridge, not a batch pipeline runner.
+It does not currently:
+
+- save `.npz` feature files
+- save keypoint figures
+- query a gallery or ranking module
+
+Persistent outputs remain the responsibility of `scripts/run_pipeline.py`.
 
 ## Future Extension Hooks
 
@@ -79,7 +91,7 @@ The current demo reserves extension points for:
 - local feature visualization integration
 - future ranked Top-K results
 
-These are intentionally not implemented in Issue 1.4.
+These are intentionally not implemented yet.
 
 ## Local Run
 
@@ -99,5 +111,5 @@ Then open the local Gradio URL shown in the terminal.
 
 ## Notes
 
-This demo is not a final web product.  
-It is a minimal interactive shell for Milestone 1 so that the current pipeline skeleton can be demonstrated in a browser before later retrieval stages are implemented.
+This demo is not a final web product.
+It is a minimal interactive shell that demonstrates the current preprocess and local feature stages while keeping retrieval output as an honest placeholder.

@@ -8,9 +8,6 @@
 
 ### Documentation branches
 - `docs/update`
-- `docs/plan`
-- `docs/design`
-- `docs/status`
 
 ### Feature branches
 - `feat/config`
@@ -26,11 +23,6 @@
 - `feat/visualization`
 - `feat/scripts`
 - `feat/core`
-
-### Chore branches
-- `chore/repo`
-- `chore/env`
-- `chore/general`
 
 ### Recommended issue branch style
 For concrete implementation tasks, create short-lived branches from `dev`:
