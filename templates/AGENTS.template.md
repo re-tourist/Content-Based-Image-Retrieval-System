@@ -1,4 +1,4 @@
-# AGENTS.md
+﻿# AGENTS.md
 
 ## Purpose
 
@@ -13,22 +13,7 @@ Agents should use this file together with:
 - `docs/plan/*`
 - `docs/contracts/*`
 - `docs/review/*`
-- `docs/handoff/*`
-- `templates/*`
-- `.github/*`
 - any nested `AGENTS.md` closer to the working directory
-
----
-
-## Repository Summary
-
-- Repository purpose: coursework-driven and engineering-driven hybrid image retrieval system
-- Current state: the traditional retrieval line is implemented through local features, BoW encoding, TF-IDF, inverted indexes, sparse search, and canonical retrieval evaluation. Use `docs/ai/PROJECT_CONTEXT.md` for the exact current milestone state.
-- Primary language / stack: Python, Markdown, TOML, and shell scripts
-- Main entrypoints:
-  - `docs/ai/PROJECT_CONTEXT.md`
-  - `docs/ai/WORKFLOW_GUIDE.md`
-  - `scripts/`
 
 ---
 
@@ -68,42 +53,31 @@ Do not:
 - silently change public behavior, contracts, or file layout
 - assume missing project facts are true
 
----
-
 ## Response and Execution Preferences
 
 - Default replies should be in Chinese unless the user explicitly asks for another language.
-- Large-compute tasks should be migrated to a Linux server or other appropriate remote environment rather than run locally if that is part of the project workflow.
-- Before executing command groups that materially advance the task, write them into `docs/run_order.md`.
+- Large-compute tasks should be migrated to the Linux server rather than run locally in this workspace.
+- Before executing commands that materially advance the task, write them into `docs/run_order.md`.
 
 ---
 
 ## Rule Layer
-
-The repository must be treated as a rule-driven workflow, not a loose document bundle.
-
-Mandatory source-of-truth order:
-
-1. `docs/ai/PROJECT_CONTEXT.md`
-2. `docs/ai/WORKFLOW_GUIDE.md`
-3. `docs/plan/plan_stage.template.md`
-4. `docs/plan/issue_stage.template.md`
-5. `docs/contracts/*`
-6. `docs/review/*`
-7. `templates/*`
-8. `.github/*`
-
-Mandatory decomposition rule:
 
 - milestone spec first
 - issue plan draft second
 - issue body third
 - implementation after approval
 
-Mandatory naming rule:
+Use the canonical terms consistently:
 
-- keep `milestone_id`, `issue_id`, `issue_type`, `module`, `depends_on`, and `priority` stable across docs
-- do not rename the same concept in different documents
+- `milestone_id`
+- `issue_id`
+- `issue_type`
+- `module`
+- `depends_on`
+- `priority`
+
+Do not rename the same concept in different documents.
 
 Command logging rule:
 
@@ -115,8 +89,6 @@ Command logging rule:
 ---
 
 ## GitHub and Commit Conventions
-
-If GitHub credentials and tool support are available in the environment, agents may use the repo templates to create or update GitHub issues, milestones, and pull requests.
 
 Use these files as the source of truth:
 
@@ -135,7 +107,7 @@ Commit messages for substantive work should follow the repository contract:
 - a `what:` body explaining the concrete changes
 - use a stable scope such as stage, module, or milestone in the subject
 
-If GitHub auth or the required tool surface is unavailable, stop and report that the remote action cannot be completed rather than pretending it was created.
+If GitHub auth is missing or unavailable, stop and report that the remote action cannot be completed rather than pretending it was created.
 
 ---
 
@@ -221,7 +193,7 @@ Instead:
 Move specialized rules out of this file and into:
 
 - nested `AGENTS.md`
-- `docs/review/code_review.template.md`
+- `docs/review/code_review.md`
 - `docs/contracts/*`
 - reusable Skills under `.agents/skills/`
 

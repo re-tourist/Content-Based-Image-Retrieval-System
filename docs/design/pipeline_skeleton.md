@@ -5,14 +5,22 @@
 Companion document: docs/ai/PROJECT_CONTEXT.md.
 
 This document describes the pipeline that is actually implemented in the repository today.
-It is intended to be code-aligned and usable as the handoff point for the next stage:
-Feature Encoding.
+It is intended to be code-aligned and usable as the handoff point for the current
+offline sparse retrieval layer.
 
 ## Actual End-to-End Flow
 
 The current runnable path in `scripts/run_pipeline.py` is:
 
 `raw image -> dataset loader -> preprocess -> local feature extraction -> feature save -> keypoint visualization`
+
+The offline sparse retrieval path is:
+
+`outputs/features/*.npz -> scripts/encode_features.py -> outputs/encoded/*.npz -> scripts/build_inverted_index.py -> outputs/indices/inverted/<corpus_split>/<method>/... -> scripts/search_images.py`
+
+The canonical retrieval evaluation closure is:
+
+`data/splits/gallery.txt + data/splits/query.txt -> scripts/run_retrieval_eval.py -> outputs/evaluations/retrieval/<corpus_split>/<method>/<variant>/...`
 
 In concrete terms:
 
@@ -34,8 +42,11 @@ In concrete terms:
 | Local Feature Extraction | `src/features/local/local_feature_extractor.py` | preprocessed image, local feature config | `LocalFeatureResult` | run SIFT or ORB and return serializable feature data | Implemented |
 | Feature Save | `src/features/local/local_feature_extractor.py` + `scripts/run_pipeline.py` | `sample_id`, `LocalFeatureResult`, output dir | `.npz` file under `outputs/features/` | persist extracted features in a stable on-disk format | Implemented |
 | Keypoint Visualization | `src/visualization/keypoints.py` + `scripts/run_pipeline.py` | preprocessed image, serialized keypoints, output dir | `.png` figure under `outputs/figures/` | draw single-image keypoint overlays for inspection and reporting | Implemented |
-| Feature Encoding | not implemented yet | saved or in-memory descriptors | encoded representation | convert descriptors into the next-stage representation | Not implemented |
-| Retrieval / Indexing / Matching | not implemented yet | encoded features or descriptors | retrieval outputs | ranking, indexing, matching, and search logic | Not implemented |
+| Feature Encoding | `src/encoding/*` + `scripts/encode_features.py` | saved feature artifacts | encoded BoW histograms under `outputs/encoded/*.npz` | convert saved local features into BoW artifacts | Implemented |
+| TF-IDF Statistics | `src/indexing/tfidf.py` | raw-count encoded BoW artifacts | `TfidfStatsArtifact` saved as `.npz` | compute DF / IDF for method-specific corpora | Implemented |
+| Inverted Index | `src/indexing/inverted_index.py` + `scripts/build_inverted_index.py` | raw-count encoded BoW artifacts + TF-IDF stats | `index_tf.npz` / `index_tfidf.npz` under `outputs/indices/inverted/<corpus_split>/<method>/` | build method-specific posting lists and document norms | Implemented |
+| Sparse Search | `src/indexing/inverted_index.py` + `scripts/search_images.py` | encoded query artifacts + inverted index | ranked top-k results | score query artifacts with `tf + dot` or `tfidf + cosine` | Implemented |
+| Canonical Retrieval Evaluation | `src/evaluation/*` + `scripts/run_retrieval_eval.py` | gallery/query split files + encoded artifacts + sparse index | per-query ranked results, metrics, PR data, summary metrics | run split-driven canonical retrieval evaluation and export stable JSON artifacts | Implemented |
 
 ## Important Runtime Notes
 
@@ -43,6 +54,11 @@ In concrete terms:
 - The loader already supports split-file mode, but the main pipeline entry does not yet instantiate it through `train.txt`, `gallery.txt`, or `query.txt`.
 - `scripts/build_splits.py` is the tool that currently builds the split manifests.
 - Keypoint visualization is drawn on the preprocessed image, not on the original raw-resolution image. This is intentional because the extracted keypoint coordinates correspond to the preprocessed image space.
+- `scripts/encode_features.py` is the offline batch-encoding entrypoint.
+- `scripts/build_inverted_index.py` consumes explicit encoded directories; `corpus_split` is a naming label only.
+- Milestone 5 indexing only accepts raw-count encoded artifacts with `normalized == False`.
+- `scripts/search_images.py` supports a single query artifact or a minimal batch query directory via `--query-dir`.
+- `scripts/run_retrieval_eval.py` is the canonical retrieval evaluation entrypoint. It uses `data/splits/gallery.txt` and `data/splits/query.txt` as fixed inputs and exports results under `outputs/evaluations/retrieval/`.
 
 ## Module Interfaces
 
@@ -180,6 +196,75 @@ Encoding code should treat these cases explicitly:
 - `method == "SIFT"`: descriptors are float-valued vectors
 - `method == "ORB"`: descriptors are binary-style `uint8` vectors
 
+## Encoded BoW File Format: `outputs/encoded/*.npz`
+
+Each encoded BoW file is a compressed `.npz` file produced by `scripts/encode_features.py`.
+The file is the handoff contract into sparse retrieval.
+
+### Saved keys
+
+| Key | Shape / Type | Meaning |
+| --- | --- | --- |
+| `sample_id` | scalar string array | original sample id |
+| `method` | scalar string array | extractor method, currently `SIFT` or `ORB` |
+| `encoding_type` | scalar string array | currently `bow` |
+| `num_visual_words` | scalar `int32` array | histogram length / codebook size |
+| `histogram` | 1D integer or float array | BoW histogram |
+| `histogram_dtype` | scalar string array | `int32` for raw counts, `float32` for normalized BoW |
+| `num_descriptors` | scalar `int32` array | descriptor count before pooling |
+| `descriptors_present` | scalar `uint8` array | `1` if descriptors existed in memory, else `0` |
+| `codebook_path` | scalar string array | codebook source path, if available |
+| `normalized` | scalar `uint8` array | `1` for normalized BoW, `0` for raw-count BoW |
+
+Indexing constraint:
+
+- Milestone 5 indexing only accepts artifacts with `normalized == False`
+- normalized BoW artifacts are valid encoding outputs, but they are rejected by the indexing stage
+
+## Sparse Retrieval Artifacts
+
+### TF-IDF stats
+
+Location:
+
+- `outputs/indices/inverted/<corpus_split>/<method>/tfidf_stats.npz`
+
+Keys:
+
+- `method`
+- `corpus_split`
+- `num_docs`
+- `num_visual_words`
+- `df`
+- `idf`
+
+### Inverted index
+
+Location:
+
+- `outputs/indices/inverted/<corpus_split>/<method>/index_tf.npz`
+- `outputs/indices/inverted/<corpus_split>/<method>/index_tfidf.npz`
+
+Keys:
+
+- `method`
+- `corpus_split`
+- `weighting_mode`
+- `num_docs`
+- `num_visual_words`
+- `sample_ids`
+- `indptr`
+- `indices`
+- `data`
+- `doc_norms`
+
+The index is stored in CSR-style form:
+
+- `indptr` marks each visual word's posting list range
+- `indices` stores document row indices
+- `data` stores posting weights for the selected weighting mode
+- `doc_norms` stores L2 norms for cosine scoring
+
 ## What Is Implemented
 
 - config loading from `configs/base.yaml`
@@ -189,81 +274,30 @@ Encoding code should treat these cases explicitly:
 - minimal preprocess with validation, resize, and grayscale conversion
 - real local feature extraction with SIFT and ORB
 - `.npz` feature saving
+- BoW encoding from saved local features
+- TF-IDF statistics for encoded BoW corpora
+- method-specific inverted index construction
+- top-k sparse search over encoded artifacts
 - single-image keypoint visualization to `.png`
 - minimal Gradio demo entry point
 
 ## What Is NOT Implemented
 
-- feature encoding
-- codebook generation
-- TF-IDF
-- inverted index construction
-- query-gallery retrieval
+- codebook generation automation beyond the current scripts
+- retrieval evaluation metrics such as PR curves and mAP
 - feature matching workflows
 - query-gallery comparison figures
 - RANSAC-based visualization
 - reranking, query expansion, dense retrieval, or hybrid fusion
 
-## Next Stage: Feature Encoding
+## Next Stage: Retrieval Evaluation
 
-The next stage should consume descriptor matrices, not raw images and not OpenCV keypoint objects.
+The next safe stage is retrieval evaluation on top of the sparse search layer.
 
-### Encoding input
+Suggested focus:
 
-Encoding should accept either:
+- gallery / query experiment wiring
+- retrieval metrics such as PR curves and mAP
+- result reporting and analysis
 
-- in-memory `LocalFeatureResult.descriptors`
-- or descriptors loaded from `outputs/features/*.npz`
-
-The stable handoff contract is the descriptor matrix plus method metadata.
-
-### Where descriptors come from
-
-Descriptors are produced in:
-
-- `src/features/local/local_feature_extractor.py`
-
-They are persisted by:
-
-- `save_local_feature_result(...)`
-
-They are saved under:
-
-- `outputs/features/*.npz`
-
-### Where encoding should connect
-
-The clean integration point is after feature saving and before any retrieval or indexing logic.
-In the current pipeline, that means inserting a new stage after:
-
-- `extract_local_features(...)`
-- `save_local_feature_result(...)`
-
-and before any future retrieval-specific logic.
-
-A stage-correct next-step shape is:
-
-```python
-feature_result = extract_local_features(preprocess_result.image, local_feature_config)
-save_path = save_local_feature_result(sample.sample_id, feature_result, feature_dir)
-encoding_result = encode_local_features(feature_result.descriptors, encoding_config)
-```
-
-or, for offline processing:
-
-```python
-with np.load(feature_path, allow_pickle=False) as data:
-    descriptors = ...
-encoding_result = encode_local_features(descriptors, encoding_config)
-```
-
-### Constraints for the next stage
-
-The encoding stage should account for:
-
-- empty descriptor cases
-- method-dependent descriptor dtype and shape
-- the fact that `run_pipeline.py` currently processes only a small sample preview for demonstration
-- the fact that feature files already exist as the on-disk contract
-
-Encoding should be added as a new stage, not by rewriting the current local feature extraction stage.
+That work should consume the existing sparse retrieval artifacts and should not change the raw-count BoW contract.
