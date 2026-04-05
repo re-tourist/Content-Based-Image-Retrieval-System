@@ -56,3 +56,6 @@ outputs/logs/*
 !outputs/logs/.gitkeep
 outputs/figures/*
 !outputs/figures/.gitkeep
+
+# Coursework artifacts
+coursework/

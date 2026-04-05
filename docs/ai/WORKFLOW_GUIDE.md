@@ -131,6 +131,20 @@ If GitHub credentials are not available, or the exposed tool surface does not in
 Milestones are not a substitute for planning docs.
 They are the remote tracking mirror of the plan.
 
+## Branch Merge Policy (Must Follow)
+
+This repository uses a strict merge flow:
+
+- All feature or topic branches must merge into `dev` first.
+- Only `dev` is allowed to merge into `main`.
+- Any PR opened from an auxiliary thread should still target `main` by default, but the actual code merge must respect the `dev -> main` path.
+
+When in doubt, follow this sequence:
+
+1. merge feature branch into `dev`
+2. merge `dev` into `main`
+3. push both branches
+
 ---
 
 ## Standard Lifecycle

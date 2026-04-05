@@ -59,3 +59,32 @@ gh pr ready 34 --repo re-tourist/Content-Based-Image-Retrieval-System
 git add docs/run_order.md
 git commit -m "docs(run_order | audit): record milestone 5 GitHub completion" -m "why:" -m "- keep the repository execution ledger aligned with the milestone 5 GitHub closeout actions so the audit trail remains reproducible in-tree." -m "what:" -m "- add the commit, push, milestone, issue, milestone-close, PR-update, and PR-ready actions to docs/run_order.md." 
 git push
+
+# [2026-04-05T21:25:08+08:00] milestone 4 closeout audit and GitHub maintenance
+gh api -X GET repos/re-tourist/Content-Based-Image-Retrieval-System/milestones --paginate
+gh issue list --repo re-tourist/Content-Based-Image-Retrieval-System --milestone "Milestone 4: Feature Encoding and Codebook Wiring" --state all
+gh issue list --repo re-tourist/Content-Based-Image-Retrieval-System --search "Issue 4" --state all
+
+# [2026-04-05T21:25:51+08:00] close GitHub milestone for M4 feature encoding
+gh api -X PATCH repos/re-tourist/Content-Based-Image-Retrieval-System/milestones/5 -f title='Milestone 4: Feature Encoding and Codebook Wiring' -f description='Closes Milestone 4 encoding foundation, codebook training, BoW encoding, encoded artifact persistence, and optional pipeline hook.' -f state=closed
+
+# [2026-04-05T21:26:21+08:00] inspect PRs for milestone 4 closeout record
+gh pr list --repo re-tourist/Content-Based-Image-Retrieval-System --search "stage4" --state all
+gh pr list --repo re-tourist/Content-Based-Image-Retrieval-System --search "encoding" --state all
+
+# [2026-04-05T21:32:10+08:00] update merge policy docs, ignore coursework, and merge branches
+Get-Content docs\ai\WORKFLOW_GUIDE.md -TotalCount 220
+Get-Content docs\ai\prompt\stage4\prompt_stage4-4.md -TotalCount 20
+Get-Content .gitignore
+git status --short
+git diff -- docs/ai/prompt/stage4/prompt_stage4-4.md
+git branch --show-current
+git branch --all
+git add docs/ai/WORKFLOW_GUIDE.md .gitignore docs/run_order.md docs/handoff/milestone_closeout_stage4.md docs/ai/prompt/stage4/prompt_stage4-4.md
+git commit -m "docs(merge | policy): enforce dev->main flow and ignore coursework artifacts" -m "why:" -m "- align the repo workflow with the required merge policy and prevent coursework artifacts from leaking into version control." -m "what:" -m "- document the merge rule, add coursework/ to .gitignore, and record milestone 4 closeout artifacts." 
+git checkout dev
+git merge feat/scripts
+git checkout main
+git merge dev
+git push origin dev
+git push origin main
