@@ -7,9 +7,12 @@ It records the actual implemented system state, the stable data contracts, and t
 
 Use this file together with the following code-aligned documents:
 
+- `docs/ai/WORKFLOW_GUIDE.md`: milestone compilation workflow, command logging, and closeout rules
+- `docs/snapshots/project_snapshot.md`: repository snapshot, key entry points, and open uncertainties
 - `docs/design/pipeline_skeleton.md`: current pipeline stages, interfaces, and `.npz` contract
 - `docs/design/dataset_structure.md`: dataset layout and split manifest rules
 - `docs/design/indexing_usage.md`: sparse retrieval contract, CLI usage, and output layout
+- `docs/design/retrieval_evaluation.md`: canonical retrieval evaluation closure, metrics, and exported results
 - `docs/design/web_demo.md`: current Gradio demo scope and limitations
 
 ## Project Identity
@@ -35,7 +38,7 @@ Verified completed work at the time of writing:
 - Milestone 2: Data Preparation
 - Milestone 3: Local Feature Extraction and Keypoint Visualization
 - Milestone 4: Feature Encoding and Codebook Wiring
-- Milestone 5: TF-IDF and Inverted Index
+- Milestone 5: TF-IDF, Inverted Index, Sparse Retrieval, and Canonical Retrieval Evaluation Closure
 
 The main runnable engineering path is no longer only a skeleton. It now performs:
 
@@ -51,6 +54,7 @@ The repository also now contains the offline sparse retrieval stages:
 - TF-IDF statistics
 - method-specific inverted indexes
 - query-time top-k search over encoded artifacts
+- split-driven canonical retrieval evaluation with P@k / R@k / AP / mAP / PR data export
 
 ## Main Entry Points
 
@@ -88,6 +92,13 @@ It supports the Milestone 5 scoring paths:
 
 - `tf + dot`
 - `tfidf + cosine`
+
+### `scripts/run_retrieval_eval.py`
+
+Runs the canonical retrieval evaluation closure.
+It reads `data/splits/gallery.txt` and `data/splits/query.txt`, matches them to
+explicit encoded artifacts, builds or loads the sparse index, and exports ranked
+results plus per-query and summary metrics.
 
 ### `scripts/build_splits.py`
 
@@ -211,6 +222,24 @@ Important indexing constraint:
 
 - Milestone 5 indexing only accepts raw-count encoded artifacts with `normalized == False`
 - normalized BoW artifacts are valid encoding outputs, but they are rejected by the indexing stage
+
+### Retrieval evaluation outputs
+
+Location:
+
+- `outputs/evaluations/retrieval/<corpus_split>/<method>/<variant>/`
+
+Stable files:
+
+- `variant.json`
+- `per_query_results.json`
+- `per_query_metrics.json`
+- `summary_metrics.json`
+- `pr_curve.json`
+
+Canonical run manifest:
+
+- `outputs/evaluations/retrieval/<corpus_split>/run_manifest.json`
 
 ### Indexing artifacts
 

@@ -18,6 +18,10 @@ The offline sparse retrieval path is:
 
 `outputs/features/*.npz -> scripts/encode_features.py -> outputs/encoded/*.npz -> scripts/build_inverted_index.py -> outputs/indices/inverted/<corpus_split>/<method>/... -> scripts/search_images.py`
 
+The canonical retrieval evaluation closure is:
+
+`data/splits/gallery.txt + data/splits/query.txt -> scripts/run_retrieval_eval.py -> outputs/evaluations/retrieval/<corpus_split>/<method>/<variant>/...`
+
 In concrete terms:
 
 1. Resolve config from `configs/base.yaml`
@@ -42,6 +46,7 @@ In concrete terms:
 | TF-IDF Statistics | `src/indexing/tfidf.py` | raw-count encoded BoW artifacts | `TfidfStatsArtifact` saved as `.npz` | compute DF / IDF for method-specific corpora | Implemented |
 | Inverted Index | `src/indexing/inverted_index.py` + `scripts/build_inverted_index.py` | raw-count encoded BoW artifacts + TF-IDF stats | `index_tf.npz` / `index_tfidf.npz` under `outputs/indices/inverted/<corpus_split>/<method>/` | build method-specific posting lists and document norms | Implemented |
 | Sparse Search | `src/indexing/inverted_index.py` + `scripts/search_images.py` | encoded query artifacts + inverted index | ranked top-k results | score query artifacts with `tf + dot` or `tfidf + cosine` | Implemented |
+| Canonical Retrieval Evaluation | `src/evaluation/*` + `scripts/run_retrieval_eval.py` | gallery/query split files + encoded artifacts + sparse index | per-query ranked results, metrics, PR data, summary metrics | run split-driven canonical retrieval evaluation and export stable JSON artifacts | Implemented |
 
 ## Important Runtime Notes
 
@@ -53,6 +58,7 @@ In concrete terms:
 - `scripts/build_inverted_index.py` consumes explicit encoded directories; `corpus_split` is a naming label only.
 - Milestone 5 indexing only accepts raw-count encoded artifacts with `normalized == False`.
 - `scripts/search_images.py` supports a single query artifact or a minimal batch query directory via `--query-dir`.
+- `scripts/run_retrieval_eval.py` is the canonical retrieval evaluation entrypoint. It uses `data/splits/gallery.txt` and `data/splits/query.txt` as fixed inputs and exports results under `outputs/evaluations/retrieval/`.
 
 ## Module Interfaces
 

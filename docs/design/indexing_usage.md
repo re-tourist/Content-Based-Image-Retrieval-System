@@ -125,3 +125,29 @@ The smallest reproducible smoke chain is:
 5. search the query encoded directory against the saved index
 6. compare `tf + dot` and `tfidf + cosine`
 
+## Canonical Retrieval Evaluation
+
+When you want the course-report-friendly retrieval closure, use the dedicated
+evaluation script instead of `scripts/search_images.py`:
+
+```bash
+python scripts/run_retrieval_eval.py \
+  --data-root data \
+  --gallery-split-file data/splits/gallery.txt \
+  --query-split-file data/splits/query.txt \
+  --encoded-dir coursework/week02/outputs/sift_k64_minibatch_kmeans/encoded/test \
+  --index-root outputs/indices/inverted \
+  --output-root outputs/evaluations/retrieval_smoke \
+  --compare \
+  --top-k 10
+```
+
+The evaluation script:
+
+- reads the canonical gallery/query split files
+- matches them to explicit encoded artifacts
+- loads or builds the sparse index
+- exports per-query ranked results, metrics, summary metrics, and PR data
+
+This keeps sparse retrieval debugging in `search_images.py` separate from the
+canonical evaluation closure used for reporting.
