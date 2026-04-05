@@ -88,3 +88,10 @@ git checkout main
 git merge dev
 git push origin dev
 git push origin main
+
+# [2026-04-05T21:34:55+08:00] sync dev with origin and retry push after rejection
+git checkout dev
+git pull
+git push origin dev
+git checkout main
+git push origin main
