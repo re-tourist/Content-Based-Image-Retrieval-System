@@ -1,0 +1,416 @@
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+from typing import Any
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.datasets import ImageDatasetLoader, ImageSample
+from src.encoding import encode_feature_file
+from src.features.local import LocalFeatureResult, extract_local_features, save_local_feature_result
+from src.preprocess import PreprocessResult, preprocess_image
+from src.utils import get_default_config_path, load_config
+from src.visualization import save_keypoint_visualization
+
+
+DEFAULT_PREVIEW_COUNT = 3
+
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run the current pipeline skeleton.")
+    parser.add_argument(
+        "--config",
+        default=get_default_config_path(),
+        help="Path to the runtime config file. Defaults to configs/base.yaml.",
+    )
+    return parser.parse_args()
+
+
+
+def load_runtime_config(config_path: str) -> tuple[dict[str, Any], Path]:
+    resolved_path = Path(config_path).expanduser()
+    if not resolved_path.is_absolute():
+        resolved_path = (PROJECT_ROOT / resolved_path).resolve()
+    else:
+        resolved_path = resolved_path.resolve()
+
+    config = load_config(str(resolved_path))
+    return config, resolved_path
+
+
+
+def build_dataset_loader(config: dict[str, Any]) -> tuple[ImageDatasetLoader, Path, str]:
+    dataset_config = config.get("dataset")
+    if not isinstance(dataset_config, dict):
+        raise ValueError("Config must contain a 'dataset' mapping.")
+
+    dataset_root = _require_path(dataset_config.get("root"), "dataset.root")
+    image_dir, resolved_from = resolve_dataset_image_dir(dataset_config, dataset_root)
+    split = infer_split_name(dataset_root, image_dir)
+    loader = ImageDatasetLoader(root_dir=image_dir, split=split, verbose=False)
+    return loader, image_dir, resolved_from
+
+
+
+def resolve_dataset_image_dir(dataset_config: dict[str, Any], dataset_root: Path) -> tuple[Path, str]:
+    explicit_keys = ("image_dir", "images_dir", "input_dir")
+    for key in explicit_keys:
+        value = dataset_config.get(key)
+        if value is None:
+            continue
+        image_dir = _require_path(value, f"dataset.{key}", base_dir=dataset_root)
+        if not image_dir.exists():
+            raise FileNotFoundError(
+                f"Configured dataset image directory not found: {image_dir} (from dataset.{key})"
+            )
+        if not image_dir.is_dir():
+            raise NotADirectoryError(
+                f"Configured dataset image path is not a directory: {image_dir} (from dataset.{key})"
+            )
+        return image_dir, f"dataset.{key}"
+
+    fallback_candidates = (
+        (dataset_root / "train" / "image", "fallback: dataset.root/train/image"),
+        (dataset_root / "test", "fallback: dataset.root/test"),
+        (dataset_root / "raw", "fallback: dataset.root/raw"),
+    )
+    for candidate_path, source in fallback_candidates:
+        if candidate_path.exists() and candidate_path.is_dir():
+            return candidate_path.resolve(), source
+
+    checked = ", ".join(str(path) for path, _ in fallback_candidates)
+    raise FileNotFoundError(
+        "Could not resolve a dataset image directory from config. "
+        f"Checked: {checked}"
+    )
+
+
+
+def infer_split_name(dataset_root: Path, image_dir: Path) -> str:
+    train_dir = (dataset_root / "train" / "image").resolve()
+    test_dir = (dataset_root / "test").resolve()
+    if image_dir == train_dir:
+        return "train"
+    if image_dir == test_dir:
+        return "test"
+    return "unspecified"
+
+
+
+def print_dataset_summary(loader: ImageDatasetLoader, image_dir: Path, resolved_from: str) -> None:
+    stats = loader.stats()
+    print(f"Resolved dataset image directory: {image_dir} ({resolved_from})")
+    print(f"Loaded {stats['total_images']} images from {image_dir}")
+    print(f"Dataset split: {stats['split']}")
+    print(f"Supported extensions: {', '.join(stats['supported_extensions'])}")
+
+
+
+def run_pipeline_skeleton(loader: ImageDatasetLoader, config: dict[str, Any]) -> None:
+    preprocess_config = _get_mapping(config, "preprocess")
+    local_feature_config = _get_local_feature_config(config)
+    visualization_config = _get_visualization_config(config)
+    output_config = _get_mapping(config, "output")
+    preview_encoding_enabled = _is_preview_encoding_enabled(config)
+    sample_limit = min(_resolve_max_samples(local_feature_config), len(loader))
+    samples = loader.preview(sample_limit)
+
+    print(f"Running pipeline skeleton on first {len(samples)} samples")
+    print(f"Local feature method: {str(local_feature_config.get('method', local_feature_config.get('local_method', 'sift'))).lower()}")
+    if bool(visualization_config.get("enabled", True)) and bool(visualization_config.get("save_keypoints", True)):
+        print("Keypoint visualization enabled")
+    if preview_encoding_enabled:
+        print("Preview-time BoW encoding enabled")
+
+    for sample in samples:
+        print(f"Sample: id={sample.sample_id} file={sample.file_name} split={sample.split}")
+
+        image = loader.load_image(sample)
+        print(f"Loaded image with shape={_shape_of(image)}")
+
+        preprocess_result = preprocess_image(image, preprocess_config)
+        print_preprocess_stage(sample, preprocess_result)
+
+        feature_result = extract_local_features(preprocess_result.image, local_feature_config)
+        print_local_feature_stage(sample, feature_result)
+
+        save_path = save_feature_result(sample, feature_result, local_feature_config, output_config)
+        figure_path = visualize_keypoints(
+            sample,
+            preprocess_result.image,
+            feature_result,
+            output_config,
+            visualization_config,
+        )
+
+        if save_path is not None:
+            print(f"Saved features to {save_path}")
+        if figure_path is not None:
+            print(
+                f"Visualized {feature_result.meta.get('num_keypoints')} keypoints for sample {sample.sample_id}"
+            )
+            print(f"Saved keypoint figure to {figure_path}")
+
+        encoded_path = maybe_encode_saved_feature(save_path, config)
+        if encoded_path is not None:
+            print(f"Saved encoded feature to {encoded_path}")
+
+        # Future hooks: tf-idf -> inverted index -> retrieval -> rerank
+        # -> query expansion -> dense global retrieval -> hybrid fusion
+
+
+
+def print_preprocess_stage(sample: ImageSample, result: PreprocessResult) -> None:
+    resize_meta = result.meta.get("resize", {})
+    resize_text = "disabled"
+    if isinstance(resize_meta, dict) and resize_meta.get("enabled"):
+        resize_text = f"enabled -> ({resize_meta.get('height')}, {resize_meta.get('width')})"
+
+    print(
+        "Preprocess stage completed for "
+        f"{sample.file_name} original_shape={result.original_shape} "
+        f"processed_shape={result.processed_shape} color_mode={result.color_mode} "
+        f"resize={resize_text} steps={result.meta.get('applied_steps')}"
+    )
+
+
+
+def print_local_feature_stage(sample: ImageSample, result: LocalFeatureResult) -> None:
+    print(
+        "Local feature stage completed for "
+        f"{sample.file_name} method={result.meta.get('method')} "
+        f"keypoints={result.meta.get('num_keypoints')} "
+        f"descriptor_shape={result.meta.get('descriptor_shape')}"
+    )
+
+
+
+def save_feature_result(
+    sample: ImageSample,
+    feature_result: LocalFeatureResult,
+    local_feature_config: dict[str, Any],
+    output_config: dict[str, Any],
+) -> Path | None:
+    save_enabled = bool(local_feature_config.get("save", True))
+    if not save_enabled:
+        print(f"Feature saving disabled for {sample.file_name}")
+        return None
+
+    feature_dir = output_config.get("feature_dir", "outputs/features")
+    return save_local_feature_result(sample.sample_id, feature_result, feature_dir)
+
+
+
+def visualize_keypoints(
+    sample: ImageSample,
+    image: Any,
+    feature_result: LocalFeatureResult,
+    output_config: dict[str, Any],
+    visualization_config: dict[str, Any],
+) -> Path | None:
+    enabled = bool(visualization_config.get("enabled", True))
+    save_keypoints = bool(visualization_config.get("save_keypoints", True))
+    if not enabled or not save_keypoints:
+        return None
+
+    figure_dir = output_config.get("figure_dir", "outputs/figures")
+    label = f"{feature_result.meta.get('method')} keypoints={feature_result.meta.get('num_keypoints')}"
+    return save_keypoint_visualization(
+        sample.sample_id,
+        image,
+        feature_result.keypoints,
+        figure_dir,
+        label=label,
+    )
+
+
+
+def maybe_encode_saved_feature(feature_path: Path | None, config: dict[str, Any]) -> Path | None:
+    encoding_config = _get_mapping(config, "encoding")
+    if not bool(encoding_config.get("enabled", False)):
+        return None
+
+    if feature_path is None:
+        raise ValueError(
+            "Encoding is enabled but no feature artifact was saved. "
+            "Preview-time encoding requires local_feature.save=true."
+        )
+
+    bow_config = _get_nested_mapping(encoding_config, "bow", "encoding.bow")
+    if not bool(bow_config.get("enabled", True)):
+        raise ValueError("Encoding is enabled but encoding.bow.enabled is false.")
+
+    codebook_dir = _resolve_encoding_codebook_dir(config)
+    encoded_dir = _resolve_encoding_output_dir(config)
+    normalize = _resolve_encoding_normalized(config)
+    return encode_feature_file(
+        feature_path=feature_path,
+        codebook_dir=codebook_dir,
+        output_dir=encoded_dir,
+        normalize=normalize,
+    )
+
+
+
+def _get_local_feature_config(config: dict[str, Any]) -> dict[str, Any]:
+    value = config.get("local_feature")
+    if value is not None:
+        if not isinstance(value, dict):
+            raise ValueError("Config section 'local_feature' must be a mapping.")
+        return value
+
+    legacy_value = config.get("feature")
+    if legacy_value is None:
+        return {}
+    if not isinstance(legacy_value, dict):
+        raise ValueError("Config section 'feature' must be a mapping.")
+    return legacy_value
+
+
+
+def _get_visualization_config(config: dict[str, Any]) -> dict[str, Any]:
+    value = config.get("visualization")
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError("Config section 'visualization' must be a mapping.")
+    return value
+
+
+
+def _is_preview_encoding_enabled(config: dict[str, Any]) -> bool:
+    encoding_config = _get_mapping(config, "encoding")
+    return bool(encoding_config.get("enabled", False))
+
+
+
+def _resolve_encoding_codebook_dir(config: dict[str, Any]) -> Path:
+    encoding_config = _get_mapping(config, "encoding")
+    codebook_config = _get_nested_mapping(encoding_config, "codebook", "encoding.codebook")
+    bow_config = _get_nested_mapping(encoding_config, "bow", "encoding.bow")
+    return _require_path(
+        _first_value(codebook_config.get("output_dir"), bow_config.get("codebook_dir"), "outputs/indices/codebooks"),
+        "encoding.codebook.output_dir",
+    )
+
+
+
+def _resolve_encoding_output_dir(config: dict[str, Any]) -> Path:
+    encoding_config = _get_mapping(config, "encoding")
+    input_config = _get_nested_mapping(encoding_config, "input", "encoding.input")
+    bow_config = _get_nested_mapping(encoding_config, "bow", "encoding.bow")
+    return _require_path(
+        _first_value(input_config.get("encoded_dir"), bow_config.get("output_dir"), "outputs/encoded"),
+        "encoding.input.encoded_dir",
+    )
+
+
+
+def _resolve_encoding_normalized(config: dict[str, Any]) -> bool:
+    encoding_config = _get_mapping(config, "encoding")
+    bow_config = _get_nested_mapping(encoding_config, "bow", "encoding.bow")
+    if "normalized" in bow_config:
+        return _require_bool(bow_config.get("normalized"), "encoding.bow.normalized")
+    if "normalize" in bow_config:
+        return _require_bool(bow_config.get("normalize"), "encoding.bow.normalize")
+    return False
+
+
+
+def _resolve_max_samples(local_feature_config: dict[str, Any]) -> int:
+    value = local_feature_config.get("max_samples", DEFAULT_PREVIEW_COUNT)
+    if isinstance(value, bool):
+        raise ValueError("Config field 'local_feature.max_samples' must be a positive integer.")
+
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Config field 'local_feature.max_samples' must be a positive integer.") from exc
+
+    if parsed <= 0:
+        raise ValueError(f"Config field 'local_feature.max_samples' must be greater than zero, got {parsed}.")
+    return parsed
+
+
+
+def _require_path(value: Any, field_name: str, base_dir: Path | None = None) -> Path:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"Config field '{field_name}' must be a non-empty path string.")
+
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = ((base_dir or PROJECT_ROOT) / path).resolve()
+    else:
+        path = path.resolve()
+    return path
+
+
+
+def _get_mapping(config: dict[str, Any], key: str) -> dict[str, Any]:
+    value = config.get(key)
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError(f"Config section '{key}' must be a mapping.")
+    return value
+
+
+
+def _get_nested_mapping(parent: dict[str, Any], key: str, field_name: str) -> dict[str, Any]:
+    value = parent.get(key)
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError(f"Config section '{field_name}' must be a mapping.")
+    return value
+
+
+
+def _first_value(*values: Any) -> Any:
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
+
+def _require_bool(value: Any, field_name: str) -> bool:
+    if not isinstance(value, bool):
+        raise ValueError(f"Config field '{field_name}' must be a boolean.")
+    return value
+
+
+
+def _shape_of(image: Any) -> tuple[int, ...] | None:
+    shape = getattr(image, "shape", None)
+    if not isinstance(shape, tuple):
+        return None
+    return tuple(int(dim) for dim in shape)
+
+
+
+def main() -> int:
+    args = parse_args()
+
+    try:
+        config, config_path = load_runtime_config(args.config)
+        print(f"Loaded config from {config_path}")
+
+        loader, image_dir, resolved_from = build_dataset_loader(config)
+        print_dataset_summary(loader, image_dir, resolved_from)
+        run_pipeline_skeleton(loader, config)
+        print("Pipeline skeleton run completed")
+        return 0
+    except (FileNotFoundError, NotADirectoryError, ValueError, OSError, ImportError, RuntimeError, TypeError) as exc:
+        print(f"Pipeline skeleton run failed: {exc}")
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

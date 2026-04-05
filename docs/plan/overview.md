@@ -1,5 +1,7 @@
 # 图像检索系统项目总览（overview）
 
+![framework.png](../../asset/framework.png)
+
 ## 1. 先回答你的问题：这样开发会不会更好？
 
 会，而且这比“直接开写代码”要稳得多。

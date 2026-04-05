@@ -1,19 +1,46 @@
-# Project Context
+﻿# Project Context
 
 ## Purpose of This File
 
-This file is the current handoff context for engineers or coding agents joining the repository.
-It summarizes the actual implemented system state and the next safe integration point.
+This is the canonical handoff document for engineers or coding agents joining the repository.
+It records the actual implemented system state, the stable data contracts, and the next safe integration point.
+
+Use this file together with the following code-aligned documents:
+
+- `docs/ai/WORKFLOW_GUIDE.md`: milestone compilation workflow, command logging, and closeout rules
+- `docs/snapshots/project_snapshot.md`: repository snapshot, key entry points, and open uncertainties
+- `docs/design/pipeline_skeleton.md`: current pipeline stages, interfaces, and `.npz` contract
+- `docs/design/dataset_structure.md`: dataset layout and split manifest rules
+- `docs/design/indexing_usage.md`: sparse retrieval contract, CLI usage, and output layout
+- `docs/design/retrieval_evaluation.md`: canonical retrieval evaluation closure, metrics, and exported results
+- `docs/design/web_demo.md`: current Gradio demo scope and limitations
+
+## Project Identity
+
+This repository is a coursework-driven and engineering-driven Hybrid Image Retrieval System.
+
+Long-term project direction:
+
+- traditional retrieval line: local features -> encoding -> TF-IDF -> inverted index
+- later enhancement line: dense global retrieval and hybrid fusion
+
+Current development priority:
+
+- keep the implemented pipeline runnable
+- keep interfaces and output contracts stable
+- prepare the next stage without overbuilding future modules
 
 ## Repository State
 
-Completed work at the time of writing:
+Verified completed work at the time of writing:
 
 - Milestone 1: System Skeleton
 - Milestone 2: Data Preparation
 - Milestone 3: Local Feature Extraction and Keypoint Visualization
+- Milestone 4: Feature Encoding and Codebook Wiring
+- Milestone 5: TF-IDF, Inverted Index, Sparse Retrieval, and Canonical Retrieval Evaluation Closure
 
-The main runnable pipeline is no longer only a skeleton. It now performs:
+The main runnable engineering path is no longer only a skeleton. It now performs:
 
 - dataset loading
 - preprocess
@@ -21,12 +48,19 @@ The main runnable pipeline is no longer only a skeleton. It now performs:
 - feature saving
 - keypoint figure generation
 
+The repository also now contains the offline sparse retrieval stages:
+
+- batch BoW encoding from saved local features
+- TF-IDF statistics
+- method-specific inverted indexes
+- query-time top-k search over encoded artifacts
+- split-driven canonical retrieval evaluation with P@k / R@k / AP / mAP / PR data export
+
 ## Main Entry Points
 
 ### `scripts/run_pipeline.py`
 
-Primary engineering entry for the current pipeline.
-It currently:
+Primary engineering entry for the current pipeline. It currently:
 
 1. loads `configs/base.yaml`
 2. resolves a dataset image directory
@@ -36,9 +70,35 @@ It currently:
 6. saves `.npz` feature files
 7. saves `.png` keypoint figures
 
-Important note:
+Important runtime note:
 
 - the script currently uses directory-scan dataset loading, not split-file loading, even though split support exists in the loader
+- the script remains preview-oriented; batch BoW encoding and sparse retrieval are handled by dedicated scripts
+
+### `scripts/encode_features.py`
+
+Batch-encodes saved local-feature artifacts into BoW histograms under `outputs/encoded/`.
+This is the offline entrypoint for Milestone 4 and is the stable handoff into indexing.
+
+### `scripts/build_inverted_index.py`
+
+Builds TF-IDF statistics and method-specific inverted indexes from an explicit encoded directory.
+The script consumes `outputs/encoded/*.npz` raw-count BoW artifacts and writes `outputs/indices/inverted/<corpus_split>/<method>/...`.
+
+### `scripts/search_images.py`
+
+Loads encoded query artifacts and searches them against a method-specific inverted index.
+It supports the Milestone 5 scoring paths:
+
+- `tf + dot`
+- `tfidf + cosine`
+
+### `scripts/run_retrieval_eval.py`
+
+Runs the canonical retrieval evaluation closure.
+It reads `data/splits/gallery.txt` and `data/splits/query.txt`, matches them to
+explicit encoded artifacts, builds or loads the sparse index, and exports ranked
+results plus per-query and summary metrics.
 
 ### `scripts/build_splits.py`
 
@@ -48,13 +108,15 @@ This is the current standardization tool for dataset manifests.
 ### `scripts/run_demo.py`
 
 Launches the minimal Gradio demo.
-The demo reuses current preprocess and local feature extraction logic, but its Top-K display is still a placeholder.
+The demo reuses the current preprocess and local feature extraction logic, reports keypoint statistics, and keeps the Top-K result area as a placeholder.
 
-## Current Data Flow
+## Current Implemented Data Flow
 
-Actual per-sample data flow:
+Actual per-sample pipeline flow:
 
 `ImageSample -> load_image -> PreprocessResult -> LocalFeatureResult -> .npz feature file -> keypoint figure`
+
+## Core Module Contracts
 
 ### Dataset stage
 
@@ -62,10 +124,11 @@ Primary type:
 
 - `ImageSample(sample_id, image_path, file_name, split, meta)`
 
-Key points:
+What matters downstream:
 
 - the loader supports both directory mode and split-file mode
 - the main pipeline currently demonstrates directory mode
+- `load_image(...)` returns an OpenCV image as `numpy.ndarray`
 
 ### Preprocess stage
 
@@ -103,6 +166,19 @@ Descriptor contract:
 
 ## On-Disk Contracts
 
+### Split manifests
+
+Location:
+
+- `data/splits/train.txt`
+- `data/splits/gallery.txt`
+- `data/splits/query.txt`
+
+Current format:
+
+- one `data/`-relative image path per line
+- blank lines and `#` comment lines are ignored
+
 ### Feature files
 
 Location:
@@ -122,6 +198,59 @@ Stable keys:
 - `keypoint_fields`
 
 This is the primary handoff contract for the next stage.
+
+### Encoded BoW files
+
+Location:
+
+- `outputs/encoded/*.npz`
+
+Stable keys:
+
+- `sample_id`
+- `method`
+- `encoding_type`
+- `num_visual_words`
+- `histogram`
+- `histogram_dtype`
+- `num_descriptors`
+- `descriptors_present`
+- `codebook_path`
+- `normalized`
+
+Important indexing constraint:
+
+- Milestone 5 indexing only accepts raw-count encoded artifacts with `normalized == False`
+- normalized BoW artifacts are valid encoding outputs, but they are rejected by the indexing stage
+
+### Retrieval evaluation outputs
+
+Location:
+
+- `outputs/evaluations/retrieval/<corpus_split>/<method>/<variant>/`
+
+Stable files:
+
+- `variant.json`
+- `per_query_results.json`
+- `per_query_metrics.json`
+- `summary_metrics.json`
+- `pr_curve.json`
+
+Canonical run manifest:
+
+- `outputs/evaluations/retrieval/<corpus_split>/run_manifest.json`
+
+### Indexing artifacts
+
+Location:
+
+- `outputs/indices/inverted/<corpus_split>/<method>/tfidf_stats.npz`
+- `outputs/indices/inverted/<corpus_split>/<method>/index_tf.npz`
+- `outputs/indices/inverted/<corpus_split>/<method>/index_tfidf.npz`
+
+The `corpus_split` segment is a naming and logging label only.
+The actual corpus source is the explicit encoded directory passed to the build script.
 
 ### Visualization files
 
@@ -154,6 +283,7 @@ Important operational fields:
 - `local_feature.method`
 - `local_feature.save`
 - `local_feature.max_samples`
+- `local_feature.orb_nfeatures`
 - `visualization.enabled`
 - `visualization.save_keypoints`
 
@@ -164,58 +294,45 @@ Important operational fields:
 - preprocess result standardization
 - real SIFT / ORB extraction
 - `.npz` feature persistence
+- BoW encoding from saved local features
+- TF-IDF statistics for encoded BoW corpora
+- method-specific inverted index construction
+- top-k sparse search over encoded artifacts
 - `.png` keypoint visualization
 - minimal demo reuse of preprocess and local feature extraction
 
 ## What Is Not Implemented
 
-- feature encoding
-- codebook creation
-- descriptor aggregation / pooling beyond raw extraction
-- TF-IDF
-- indexing
-- retrieval
+- codebook training automation beyond the current scripts
+- retrieval evaluation metrics such as mAP / PR curves
 - reranking
 - dense retrieval
 - hybrid fusion
+- query expansion
+- web demo overhaul
 
-## Next Stage: Feature Encoding
+## Next Stage: Retrieval Evaluation
 
-Feature Encoding should be the next inserted stage.
-It should not modify the existing extraction contract.
+The next safe stage is not feature encoding or indexing anymore.
+Those are now implemented and should be treated as stable handoff points.
 
-### Expected encoding input
+The next intended work is:
 
-Encoding should consume descriptor matrices from either:
+- retrieval evaluation on top of the new sparse search stage
+- gallery/query experiment wiring
+- metrics such as PR curves and mAP
 
-- `LocalFeatureResult.descriptors`
-- or `outputs/features/*.npz`
+That work should consume `outputs/indices/inverted/<corpus_split>/<method>/...` and should not change the raw-count BoW contract.
 
-It should also read:
+## Recommended Document Set for Next-Stage Planning
 
-- `method`
-- `descriptors_present`
-- `descriptor_dtype`
-- `descriptor_shape`
+If a new engineer or ChatGPT is asked to plan Feature Encoding, the minimum reliable input set is:
 
-### Integration point
+- `docs/ai/PROJECT_CONTEXT.md`
+- `docs/design/pipeline_skeleton.md`
+- `configs/base.yaml`
+- `scripts/run_pipeline.py`
+- `src/features/local/local_feature_extractor.py`
+- `docs/design/dataset_structure.md`
 
-The correct insertion point is after feature extraction and feature saving.
-In practical terms, new encoding modules should be wired after:
-
-- `extract_local_features(...)`
-- `save_local_feature_result(...)`
-
-and before any future indexing or retrieval modules.
-
-### Design constraints for the next stage
-
-A future encoding implementation must account for:
-
-- empty descriptor cases
-- SIFT and ORB using different descriptor dtypes and dimensionalities
-- the current preview-oriented `run_pipeline.py` behavior
-- the already-established `.npz` contract
-
-The next stage should extend the pipeline by adding a new module and config section.
-It should not replace or refactor the current local feature extraction stage.
+Optionally include one real `.npz` sample summary to make descriptor shapes and dtypes explicit.

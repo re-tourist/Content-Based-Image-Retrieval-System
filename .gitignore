@@ -44,6 +44,7 @@ data/raw/*
 data/processed/*
 !data/processed/.gitkeep
 data/splits/*
+!data/splits/*.txt
 !data/splits/.gitkeep
 
 # Experiment outputs
@@ -55,3 +56,6 @@ outputs/logs/*
 !outputs/logs/.gitkeep
 outputs/figures/*
 !outputs/figures/.gitkeep
+
+# Coursework artifacts
+coursework/

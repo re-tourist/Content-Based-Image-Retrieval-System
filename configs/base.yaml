@@ -7,13 +7,45 @@ dataset:
   raw_dir: raw
   processed_dir: processed
   splits_dir: splits
+  train_source_dir: train/image
+  test_source_dir: test
+  train_split: train.txt
+  gallery_split: gallery.txt
+  query_split: query.txt
 
 preprocess:
-  image_size: [224, 224]
-  to_grayscale: false
+  resize:
+    enabled: true
+    width: 256
+    height: 256
+  color_mode: gray
 
-feature:
-  local_method: sift
+local_feature:
+  method: sift
+  save: true
+  max_samples: 3
+  orb_nfeatures: 500
+
+visualization:
+  enabled: true
+  save_keypoints: true
+
+encoding:
+  enabled: false
+  input:
+    feature_dir: outputs/features
+    encoded_dir: outputs/encoded
+  codebook:
+    enabled: false
+    output_dir: outputs/indices/codebooks
+    trainer: minibatch_kmeans
+    n_clusters: 256
+    max_descriptors: 50000
+    batch_size: 1024
+    random_state: 42
+  bow:
+    enabled: true
+    normalized: false
 
 output:
   feature_dir: outputs/features

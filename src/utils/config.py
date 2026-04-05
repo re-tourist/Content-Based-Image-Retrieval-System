@@ -10,9 +10,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "configs" / "base.yaml"
 
 
+
 def get_default_config_path() -> str:
     """Return the default config path for project scripts."""
     return str(DEFAULT_CONFIG_PATH)
+
 
 
 def load_config(config_path: str) -> dict[str, Any]:
@@ -42,6 +44,7 @@ def load_config(config_path: str) -> dict[str, Any]:
     return _resolve_paths(config)
 
 
+
 def _resolve_paths(config: dict[str, Any]) -> dict[str, Any]:
     """Resolve configured relative paths into project-friendly absolute strings."""
     dataset = config.get("dataset")
@@ -50,10 +53,23 @@ def _resolve_paths(config: dict[str, Any]) -> dict[str, Any]:
         if dataset_root is not None:
             dataset["root"] = dataset_root
 
-            for key in ("raw_dir", "processed_dir", "splits_dir"):
+            for key in (
+                "raw_dir",
+                "processed_dir",
+                "splits_dir",
+                "train_source_dir",
+                "test_source_dir",
+            ):
                 resolved = _to_absolute_path(dataset.get(key), Path(dataset_root))
                 if resolved is not None:
                     dataset[key] = resolved
+
+            splits_dir = dataset.get("splits_dir")
+            if isinstance(splits_dir, str):
+                for key in ("train_split", "gallery_split", "query_split"):
+                    resolved = _to_absolute_path(dataset.get(key), Path(splits_dir))
+                    if resolved is not None:
+                        dataset[key] = resolved
 
     output = config.get("output")
     if isinstance(output, dict):
@@ -63,6 +79,7 @@ def _resolve_paths(config: dict[str, Any]) -> dict[str, Any]:
                 output[key] = resolved
 
     return config
+
 
 
 def _to_absolute_path(value: Any, base_dir: Path) -> str | None:
